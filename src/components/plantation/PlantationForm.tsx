@@ -1,6 +1,6 @@
-import { useState, type ChangeEvent } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Trash2, MapPin, User, Users, Search, Camera, AlertTriangle, X } from 'lucide-react';
+import { Plus, Trash2, MapPin, User, Users, Search, Camera, AlertTriangle, X, Crosshair, ShieldCheck } from 'lucide-react';
 import {
   PlantationSubmission,
   SeedlingEntry,
@@ -14,25 +14,72 @@ import { PLANT_TYPES, getSpeciesByPlantType, addPendingSpecies, addPendingPlantT
 import { checkSpacing } from '../../data/spacingNorms';
 import { compressPhoto, distanceMeters, CHECKPOINT_GEOFENCE_METERS } from '../../utils/photoEvidence';
 import { useSaaoDirectory, useMonitoringOfficerDirectory } from '../../hooks/useDirectory';
+import { useAuth } from '../../hooks/useAuth';
 import type { GeoState } from '../GeolocationIndicator';
+
+const MODE_STORAGE_KEY = 'plantation_entry_mode';
 
 interface PlantationFormProps {
   geoState: GeoState | null;
   onSubmit: (submission: PlantationSubmission) => void;
 }
 
+/** Reverse geocode using Nominatim (free, no API key) */
+async function reverseGeocode(lat: number, lon: number): Promise<{ village?: string; union?: string; upazila?: string; district?: string } | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=bn&addressdetails=1`,
+      { headers: { 'User-Agent': 'PlantationTracker/1.0' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data.address || {};
+    // Nominatim returns village, suburb, city_district, state_district, county etc.
+    // Map to our fields
+    return {
+      village: addr.village || addr.suburb || addr.hamlet || addr.neighbourhood || '',
+      union: addr.city_district || addr.suburb || '',
+      upazila: '',
+      district: addr.state_district || addr.county || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function PlantationForm({ geoState, onSubmit }: PlantationFormProps) {
-  const [mode, setMode] = useState<EntryMode>('dae_officer');
-  const [form, setForm] = useState<PlantationSubmission>(() => createEmptySubmission('dae_officer'));
+  const { session } = useAuth();
+
+  // Restore persisted mode from localStorage
+  const [mode, setMode] = useState<EntryMode>(() => {
+    const stored = localStorage.getItem(MODE_STORAGE_KEY);
+    if (stored === 'citizen' || stored === 'dae_officer') return stored;
+    // Auto-detect from user profile role
+    if (session?.profile?.role === 'citizen') return 'citizen';
+    return 'dae_officer';
+  });
+  const [form, setForm] = useState<PlantationSubmission>(() => createEmptySubmission(mode));
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [verifyGeoLoading, setVerifyGeoLoading] = useState(false);
+  const [reverseGeoHint, setReverseGeoHint] = useState('');
 
   const saaoDirectory = useSaaoDirectory();
   const officerDirectory = useMonitoringOfficerDirectory(form.upazila);
 
+  // Persist mode selection to localStorage
   const switchMode = (next: EntryMode) => {
     setMode(next);
+    localStorage.setItem(MODE_STORAGE_KEY, next);
     setForm((prev) => ({ ...createEmptySubmission(next), village: prev.village }));
   };
+
+  // Auto-detect mode from profile on mount
+  useEffect(() => {
+    if (session?.profile?.role === 'citizen' && mode !== 'citizen') {
+      switchMode('citizen');
+    }
+  }, [session?.profile?.role]);
 
   const update = <K extends keyof PlantationSubmission>(key: K, value: PlantationSubmission[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -124,12 +171,64 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
   };
   const removePhoto = (id: string) => update('photos', form.photos.filter((p) => p.id !== id));
 
-  // ---- GPS + submit ----
-  const useGps = () => {
-    if (geoState?.coords) {
-      update('latitude', geoState.coords.latitude);
-      update('longitude', geoState.coords.longitude);
-      update('accuracy', geoState.coords.accuracy);
+  // ---- Planting GPS (রোপণের স্থান) ----
+  const useGps = async () => {
+    setGeoLoading(true);
+    setReverseGeoHint('');
+    try {
+      if (geoState?.coords) {
+        const { latitude, longitude, accuracy } = geoState.coords;
+        update('latitude', latitude);
+        update('longitude', longitude);
+        update('accuracy', accuracy);
+
+        // Attempt reverse geocode to auto-fill village/union
+        const geo = await reverseGeocode(latitude, longitude);
+        if (geo) {
+          const updates: Partial<PlantationSubmission> = {};
+          if (geo.village && !form.village) updates.village = geo.village;
+          if (geo.union && !form.union) updates.union = geo.union;
+          if (geo.district && !form.district) {
+            // Try to find a matching region
+            updates.district = geo.district;
+            const allRegions = regionOptions;
+            for (const r of allRegions) {
+              const districts = getDistrictsByRegion(mode, r);
+              if (districts.includes(geo.district)) {
+                updates.region = r;
+                break;
+              }
+            }
+          }
+          if (Object.keys(updates).length > 0) {
+            setForm((prev) => ({ ...prev, ...updates }));
+            const hints = [];
+            if (updates.village) hints.push('গ্রাম');
+            if (updates.union) hints.push('ইউনিয়ন');
+            if (updates.district) hints.push('জেলা');
+            setReverseGeoHint(`স্বয়ংক্রিয় পূরণ: ${hints.join(', ')}`);
+            setTimeout(() => setReverseGeoHint(''), 4000);
+          }
+        }
+      }
+    } finally {
+      setGeoLoading(false);
+    }
+  };
+
+  // ---- Verification GPS (যাচাইকরণের স্থান) ----
+  const useVerifyGps = async () => {
+    setVerifyGeoLoading(true);
+    try {
+      if (geoState?.coords) {
+        const { latitude, longitude, accuracy } = geoState.coords;
+        update('verificationLatitude', latitude);
+        update('verificationLongitude', longitude);
+        update('verificationAccuracy', accuracy);
+        update('verificationTimestamp', new Date().toISOString());
+      }
+    } finally {
+      setVerifyGeoLoading(false);
     }
   };
 
@@ -138,22 +237,33 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
     setForm(createEmptySubmission(mode));
   };
 
+  // Distance between planting and verification points
+  const verifyDistance = form.verificationLatitude && form.latitude
+    ? distanceMeters(form.latitude, form.longitude, form.verificationLatitude, form.verificationLongitude)
+    : null;
+
   return (
     <div className="w-full max-w-lg md:max-w-2xl lg:max-w-3xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-5 pb-20 md:pb-8">
-      {/* Mode toggle */}
+      {/* Mode toggle — persisted to localStorage */}
       <div className="flex rounded-xl overflow-hidden border border-gray-200">
         <button
           onClick={() => switchMode('dae_officer')}
-          className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${mode === 'dae_officer' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600'}`}
+          className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${mode === 'dae_officer' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
         >
           <Users size={16} /> DAE কর্মকর্তা
         </button>
         <button
           onClick={() => switchMode('citizen')}
-          className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 ${mode === 'citizen' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600'}`}
+          className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${mode === 'citizen' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
         >
           <User size={16} /> নাগরিক / বহিরাগত
         </button>
+      </div>
+
+      {/* Storage indicator */}
+      <div className="flex items-center gap-1.5 text-[10px] text-gray-400 px-1">
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        মোড: {mode === 'dae_officer' ? 'DAE কর্মকর্তা' : 'নাগরিক'} — স্থানীয় স্টোরেজে সংরক্ষিত
       </div>
 
       {/* Location — region cascade */}
@@ -198,24 +308,73 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
           <p className="text-[11px] text-gray-400 mt-1">SAAO নির্বাচন করলে স্বয়ংক্রিয়ভাবে পূরণ হবে — তালিকায় না থাকলে সরাসরি লিখুন</p>
         </div>
         <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="গ্রাম" value={form.village} onChange={(e) => update('village', e.target.value)} />
-        <button onClick={useGps} className="w-full flex items-center justify-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg py-2">
-          <MapPin size={16} />
-          {form.latitude ? `${form.latitude.toFixed(5)}, ${form.longitude.toFixed(5)} (±${Math.round(form.accuracy)}m)` : 'বর্তমান GPS অবস্থান ব্যবহার করুন'}
-        </button>
-        <div>
-          <input
-            type="number"
-            min={0}
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            placeholder="রোপণ এলাকার আয়তন (বর্গমিটার, ঐচ্ছিক)"
-            value={form.areaSqMeters || ''}
-            onChange={(e) => update('areaSqMeters', parseFloat(e.target.value) || undefined)}
-          />
-          <p className="text-[11px] text-gray-400 mt-1">দূরত্ব-ভিত্তিক পর্যালোচনার জন্য — রিপোর্টের সংখ্যা পরিবর্তন করে না</p>
-        </div>
+
+        {/* Reverse geocode hint toast */}
+        {reverseGeoHint && (
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5"
+          >
+            {reverseGeoHint}
+          </motion.div>
+        )}
       </section>
 
-      {/* Species — plant type + species cascade, both extensible */}
+      {/* GPS — Planting Location */}
+      <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm space-y-3">
+        <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-1.5">
+          <Crosshair size={15} className="text-emerald-600" /> রোপণের স্থান (GPS)
+        </h3>
+        <button
+          onClick={useGps}
+          disabled={geoLoading}
+          className="w-full flex items-center justify-center gap-2 text-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg py-2.5 transition-colors disabled:opacity-50"
+        >
+          <MapPin size={16} className={geoLoading ? 'animate-pulse' : ''} />
+          {geoLoading ? 'GPS সংগ্রহ করা হচ্ছে...' : form.latitude ? `${form.latitude.toFixed(5)}, ${form.longitude.toFixed(5)} (±${Math.round(form.accuracy)}m)` : 'রোপণের স্থানে GPS নিন'}
+        </button>
+        <p className="text-[11px] text-gray-400">GPS নিলে গ্রাম ও ইউনিয়ন স্বয়ংক্রিয়ভাবে পূরণ হতে পারে</p>
+      </section>
+
+      {/* GPS — Verification Location (separate from planting) */}
+      <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm space-y-3">
+        <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-1.5">
+          <ShieldCheck size={15} className="text-blue-600" /> যাচাইকরণের স্থান (GPS)
+        </h3>
+        <button
+          onClick={useVerifyGps}
+          disabled={verifyGeoLoading}
+          className="w-full flex items-center justify-center gap-2 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg py-2.5 transition-colors disabled:opacity-50"
+        >
+          <MapPin size={16} className={verifyGeoLoading ? 'animate-pulse' : ''} />
+          {verifyGeoLoading ? 'GPS সংগ্রহ করা হচ্ছে...' : form.verificationLatitude ? `${form.verificationLatitude.toFixed(5)}, ${form.verificationLongitude.toFixed(5)} (±${Math.round(form.verificationAccuracy ?? 0)}m)` : 'যাচাইকরণের স্থানে GPS নিন'}
+        </button>
+        {verifyDistance !== null && (
+          <div className={`text-[11px] flex items-center gap-1 ${verifyDistance < 30 ? 'text-emerald-600' : verifyDistance < 100 ? 'text-amber-600' : 'text-red-600'}`}>
+            <MapPin size={11} />
+            রোপণ ও যাচাইকরণের দূরত্ব: {Math.round(verifyDistance)} মিটার
+            {verifyDistance > 15 && ' (পর্যালোচনাধীন)'}
+          </div>
+        )}
+        <p className="text-[11px] text-gray-400">মনিটরিং অফিসার রোপণ স্থান থেকে আলাদাভাবে যাচাইকরণের GPS নিতে পারেন</p>
+      </section>
+
+      {/* Area */}
+      <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
+        <input
+          type="number"
+          min={0}
+          className="w-full border rounded-lg px-3 py-2 text-sm"
+          placeholder="রোপণ এলাকার আয়তন (বর্গমিটার, ঐচ্ছিক)"
+          value={form.areaSqMeters || ''}
+          onChange={(e) => update('areaSqMeters', parseFloat(e.target.value) || undefined)}
+        />
+        <p className="text-[11px] text-gray-400 mt-1">দূরত্ব-ভিত্তিক পর্যালোচনার জন্য — রিপোর্টের সংখ্যা পরিবর্তন করে না</p>
+      </section>
+
+      {/* Species */}
       <section className="bg-white rounded-xl p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-800 text-sm">রোপণকৃত প্রজাতি</h3>
@@ -320,10 +479,10 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
             <input type="file" accept="image/*" capture="environment" className="hidden" onChange={capturePhoto} disabled={photoBusy} />
           </label>
         </div>
-        <p className="text-[11px] text-gray-400">প্রতিটি ছবি আপলোডের আগে সংকুচিত হয় (~80–150KB); ৬ মাস/১/২/৩ বছর পর ফলো-আপ ছবি যাচাইয়ের সুযোগ ভবিষ্যতে যুক্ত হবে</p>
+        <p className="text-[11px] text-gray-400">প্রতিটি ছবি আপলোডের আগে সংকুচিত হয় (~80–150KB)</p>
       </section>
 
-      {/* Caretaker — always manual */}
+      {/* Caretaker */}
       <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm space-y-3">
         <h3 className="font-semibold text-gray-800 text-sm">পরিচর্যাকারীর তথ্য</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -388,11 +547,11 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
         )}
       </section>
 
-      {/* Seedling source — reference only, full nursery module deferred */}
+      {/* Seedling source */}
       <section className="bg-white rounded-xl p-4 shadow-sm space-y-3">
         <h3 className="font-semibold text-gray-800 text-sm">চারার উৎস (ঐচ্ছিক)</h3>
         <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="নার্সারি/সরবরাহকারীর নাম" value={form.nurserySourceName ?? ''} onChange={(e) => update('nurserySourceName', e.target.value)} />
-        <p className="text-[11px] text-gray-400">নার্সারি ম্যাপিং রেজিস্ট্রির সাথে সংযোগ ও মানচিত্র সংযুক্তি পরবর্তী ধাপে যুক্ত হবে</p>
+        <p className="text-[11px] text-gray-400">নার্সারি ম্যাপিং রেজিস্ট্রির সাথে সংযোগ পরবর্তী ধাপে যুক্ত হবে</p>
       </section>
 
       {/* Remarks */}
