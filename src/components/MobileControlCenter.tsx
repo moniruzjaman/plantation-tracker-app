@@ -290,8 +290,8 @@ export default function MobileControlCenter({ networkState, geoState, submission
           onClick={() => {
             const shareData = {
               title: language === 'bn' ? 'বৃক্ষরোপণ ট্র্যাকার' : 'Plantation Tracker',
-              text: 'গাছ লাগাই গাছ বাচাই।',
-              url: 'https://plantation-tracker-v1-1073841706415.us-west1.run.app/',
+              text: '৫ বছরে ২৫ কোটি বৃক্ষ রোপণ; জাতীয় মহা উদ্দ্যোগে সম্পৃক্ত হতে প্রয়োজনীয় তথ্য।',
+              url: 'https://kurigram-plantation-tracker.surge.sh/',
             };
             if (navigator.share) {
               navigator.share(shareData).catch((err) => {
