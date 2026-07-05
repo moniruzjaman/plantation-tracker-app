@@ -1,8 +1,15 @@
-import { useState, useEffect } from 'react';
-import { PlantationSubmission } from '../types';
+import { useState, useEffect, useCallback } from 'react';
+import type { PlantationSubmission } from '../types/plantation';
+import {
+  getUnsyncedSubmissions,
+  markAsSynced,
+  bulkSaveSubmissions,
+  migrateFromLocalStorage,
+  countUnsynced,
+} from '../lib/db';
 
 export function useOfflineQueue() {
-  const [queue, setQueue] = useState<PlantationSubmission[]>([]);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{
     success: boolean;
@@ -12,44 +19,34 @@ export function useOfflineQueue() {
     message: string;
   } | null>(null);
 
-  // Load initial queue from localStorage
-  useEffect(() => {
+  // Load unsynced count from IndexedDB
+  const refreshCount = useCallback(async () => {
     try {
-      const stored = localStorage.getItem('offline_plantation_drafts');
-      if (stored) {
-        setQueue(JSON.parse(stored));
-      }
+      await migrateFromLocalStorage();
+      const count = await countUnsynced();
+      setUnsyncedCount(count);
     } catch (e) {
-      console.error('Failed to load offline drafts queue', e);
+      console.error('Failed to load unsynced count', e);
     }
   }, []);
 
-  // Save queue helper
-  const saveQueue = (updated: PlantationSubmission[]) => {
-    setQueue(updated);
-    try {
-      localStorage.setItem('offline_plantation_drafts', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Failed to persist offline drafts queue', e);
-    }
-  };
+  useEffect(() => {
+    refreshCount();
+  }, [refreshCount]);
 
-  // Add draft to queue
-  const addDraft = (draft: PlantationSubmission) => {
-    const updated = [...queue, { ...draft, synced: false }];
-    saveQueue(updated);
-  };
-
-  // Remove draft from queue
-  const removeDraft = (id: string) => {
-    const updated = queue.filter((d) => d.id !== id);
-    saveQueue(updated);
-  };
-
-  // Sync entire queue with Cloud /api/sync endpoint
+  // Sync unsynced submissions with server
   const syncQueue = async (): Promise<boolean> => {
-    const unsynced = queue.filter((d) => !d.synced);
-    if (unsynced.length === 0 || isSyncing) return false;
+    if (isSyncing) return false;
+
+    // Get fresh list of unsynced items
+    let unsynced: PlantationSubmission[];
+    try {
+      unsynced = await getUnsyncedSubmissions();
+    } catch {
+      unsynced = [];
+    }
+
+    if (unsynced.length === 0) return false;
 
     setIsSyncing(true);
     setSyncResult(null);
@@ -69,16 +66,12 @@ export function useOfflineQueue() {
 
       const data = await response.json();
 
-      // Update local storage items status to synced
-      const updatedQueue = queue.map((item) => {
-        if (!item.synced) {
-          return { ...item, synced: true };
-        }
-        return item;
-      });
-      saveQueue(updatedQueue);
+      // Mark all as synced in IndexedDB
+      for (const item of unsynced) {
+        await markAsSynced(item.id);
+      }
 
-      // Save rewards to local state storage
+      // Save rewards to local state storage (kept in localStorage as it's a simple counter)
       const currentXp = parseInt(localStorage.getItem('ai_consultation_score') || '0', 10);
       localStorage.setItem('ai_consultation_score', (currentXp + data.xpBonus).toString());
 
@@ -90,11 +83,8 @@ export function useOfflineQueue() {
         message: data.message,
       });
 
-      // Clear synced items after success
-      setTimeout(() => {
-        const remainingUnsynced = updatedQueue.filter((d) => !d.synced);
-        saveQueue(remainingUnsynced);
-      }, 5000);
+      // Refresh count
+      await refreshCount();
 
       return true;
     } catch (err: any) {
@@ -104,7 +94,7 @@ export function useOfflineQueue() {
         syncedCount: 0,
         xpBonus: 0,
         greenTokens: 0,
-        message: 'কানেকশন এরর: ক্লাউড সার্ভারের সাথে সিঙ্ক ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।',
+        message: 'কানেকশন এরর: ক্লাউড সার্ভারের সাথে সিঙ্ক ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।',
       });
       return false;
     } finally {
@@ -121,15 +111,13 @@ export function useOfflineQueue() {
     return () => {
       window.removeEventListener('online', handleOnline);
     };
-  }, [queue]);
+  }, [unsyncedCount, isSyncing]);
 
   return {
-    queue,
+    unsyncedCount,
     isSyncing,
     syncResult,
-    addDraft,
-    removeDraft,
     syncQueue,
-    unsyncedCount: queue.filter((d) => !d.synced).length,
+    refreshCount,
   };
 }

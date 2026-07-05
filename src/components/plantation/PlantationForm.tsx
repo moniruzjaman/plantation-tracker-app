@@ -139,7 +139,7 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
   };
 
   return (
-    <div className="w-full max-w-lg mx-auto p-4 space-y-5 pb-24">
+    <div className="w-full max-w-lg md:max-w-2xl lg:max-w-3xl mx-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-5 pb-20 md:pb-8">
       {/* Mode toggle */}
       <div className="flex rounded-xl overflow-hidden border border-gray-200">
         <button
@@ -157,20 +157,22 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
       </div>
 
       {/* Location — region cascade */}
-      <section className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+      <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm space-y-3">
         <h3 className="font-semibold text-gray-800 text-sm">অবস্থান</h3>
-        <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={(e) => onRegionChange(e.target.value)}>
-          <option value="">{mode === 'dae_officer' ? 'DAE অঞ্চল নির্বাচন করুন' : 'বিভাগ নির্বাচন করুন'}</option>
-          {regionOptions.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
-        </select>
-        <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.district} onChange={(e) => onDistrictChange(e.target.value)} disabled={!form.region}>
-          <option value="">জেলা নির্বাচন করুন</option>
-          {districtOptions.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.region} onChange={(e) => onRegionChange(e.target.value)}>
+            <option value="">{mode === 'dae_officer' ? 'DAE অঞ্চল নির্বাচন করুন' : 'বিভাগ নির্বাচন করুন'}</option>
+            {regionOptions.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.district} onChange={(e) => onDistrictChange(e.target.value)} disabled={!form.region}>
+            <option value="">জেলা নির্বাচন করুন</option>
+            {districtOptions.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
         <EditableCombobox
           value={form.upazila}
           onChange={(v) => setForm((p) => ({ ...p, upazila: v, union: '', blockName: '' }))}
@@ -227,7 +229,7 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
             const spacing = form.areaSqMeters && s.plantTypeId ? checkSpacing(form.areaSqMeters, s.plantTypeId, s.count) : null;
             return (
               <motion.div key={s.id} initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="border rounded-lg p-3 space-y-2">
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <select
                     className="flex-1 border rounded-lg px-2 py-2 text-sm"
                     value={s.plantTypeId ?? ''}
@@ -246,11 +248,11 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
                     ))}
                     <option value="__new__">+ নতুন ধরন যোগ করুন</option>
                   </select>
-                  <button onClick={() => removeSeedling(s.id)} className="text-red-500 p-2">
+                  <button onClick={() => removeSeedling(s.id)} className="text-red-500 p-2 self-end sm:self-auto cursor-pointer">
                     <Trash2 size={16} />
                   </button>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <select
                     className="flex-1 border rounded-lg px-2 py-2 text-sm"
                     value={s.speciesId ?? ''}
@@ -273,7 +275,7 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
                   <input
                     type="number"
                     min={0}
-                    className="w-20 border rounded-lg px-2 py-2 text-sm"
+                    className="w-full sm:w-24 border rounded-lg px-2 py-2 text-sm"
                     placeholder="সংখ্যা"
                     value={s.count || ''}
                     onChange={(e) => updateSeedling(s.id, { count: parseInt(e.target.value) || 0 })}
@@ -322,10 +324,12 @@ export default function PlantationForm({ geoState, onSubmit }: PlantationFormPro
       </section>
 
       {/* Caretaker — always manual */}
-      <section className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+      <section className="bg-white rounded-xl p-3 sm:p-4 shadow-sm space-y-3">
         <h3 className="font-semibold text-gray-800 text-sm">পরিচর্যাকারীর তথ্য</h3>
-        <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="পরিচর্যাকারীর নাম" value={form.caretakerName} onChange={(e) => update('caretakerName', e.target.value)} />
-        <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="মোবাইল নাম্বার" value={form.caretakerMobile} onChange={(e) => update('caretakerMobile', e.target.value)} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="পরিচর্যাকারীর নাম" value={form.caretakerName} onChange={(e) => update('caretakerName', e.target.value)} />
+          <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="মোবাইল নাম্বার" value={form.caretakerMobile} onChange={(e) => update('caretakerMobile', e.target.value)} />
+        </div>
       </section>
 
       {/* SAAO */}

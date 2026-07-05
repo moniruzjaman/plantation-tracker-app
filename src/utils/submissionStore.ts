@@ -1,29 +1,51 @@
 /**
- * Temporary persistence bridge for PlantationSubmission (new format).
+ * Submission persistence bridge — now backed by IndexedDB (Dexie).
  *
- * NOTE: this is localStorage, same as the rest of the app today — it is
- * NOT the Dexie/IndexedDB + real backend sync fix flagged earlier as a
- * gap. This exists only so the newly-mounted native form has somewhere
- * to write on submit. Swap the internals of these two functions for the
- * real store once that rework happens; nothing outside this file should
- * need to change.
+ * Previous version used localStorage with key 'plantation_v2_submissions'.
+ * This file now delegates to src/lib/db.ts (IndexedDB) while keeping the
+ * same function signatures so callers don't need to change.
+ *
+ * The first time the app loads after this upgrade, migrateFromLocalStorage()
+ * in db.ts will copy any existing localStorage data into IndexedDB.
  */
 
 import type { PlantationSubmission } from '../types/plantation';
+import {
+  saveSubmission as dbSave,
+  getSubmissions as dbGetAll,
+  migrateFromLocalStorage,
+} from '../lib/db';
 
-const STORAGE_KEY = 'plantation_v2_submissions';
+// Trigger migration on first import
+let migrationPromise: Promise<void> | null = null;
 
-export function getSubmissions(): PlantationSubmission[] {
+function ensureMigrated(): Promise<void> {
+  if (!migrationPromise) {
+    migrationPromise = migrateFromLocalStorage();
+  }
+  return migrationPromise;
+}
+
+/**
+ * Get all submissions from IndexedDB.
+ * Returns empty array if DB is not ready.
+ */
+export async function getSubmissions(): Promise<PlantationSubmission[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as PlantationSubmission[]) : [];
-  } catch {
+    await ensureMigrated();
+    return await dbGetAll();
+  } catch (e) {
+    console.error('Failed to read submissions from IndexedDB:', e);
     return [];
   }
 }
 
+/**
+ * Save a submission to IndexedDB.
+ * Fire-and-forget (errors are logged but don't block UI).
+ */
 export function saveSubmission(submission: PlantationSubmission): void {
-  const all = getSubmissions();
-  all.push(submission);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  ensureMigrated()
+    .then(() => dbSave(submission))
+    .catch((e) => console.error('Failed to save submission to IndexedDB:', e));
 }
