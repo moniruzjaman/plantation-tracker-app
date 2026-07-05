@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { 
   Database, 
   Leaf, 
   BarChart3, 
   TrendingUp, 
   MapPin, 
-  X, 
   Info,
   CheckCircle,
   Clock,
@@ -53,7 +52,6 @@ interface OfflinePlantationDashboardProps {
 
 export default function OfflinePlantationDashboard({ onStateChange }: OfflinePlantationDashboardProps = {}) {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
@@ -251,77 +249,39 @@ export default function OfflinePlantationDashboard({ onStateChange }: OfflinePla
   };
 
   return (
-    <div className="hidden md:block absolute top-4 left-4 z-50 pointer-events-none font-sans" id="offlineDashboardContainer">
-      <div className="flex flex-col items-start gap-2 pointer-events-auto">
-        
-        {/* Compact Toggle Button */}
-        <motion.button
-          id="offlineDashboardToggleBtn"
-          layout
-          onClick={() => setIsExpanded(!isExpanded)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-lg border backdrop-blur-sm transition-all text-xs font-semibold cursor-pointer ${
-            totalLogs > 0 
-              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700' 
-              : 'bg-white/95 border-gray-200 text-gray-700 hover:bg-gray-50'
-          }`}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
+    <div className="w-full h-full overflow-y-auto bg-white font-sans" id="offlineDashboardContainer">
+      <div className="w-full max-w-2xl mx-auto p-4 pb-24">
+        <motion.div
+          id="offlineDashboardDetailsPanel"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.15 }}
+          className="w-full bg-white text-gray-800 text-xs flex flex-col gap-3.5"
         >
-          <div className="relative flex h-2 w-2">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${totalLogs > 0 ? 'bg-white' : 'bg-emerald-400'}`}></span>
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${totalLogs > 0 ? 'bg-white' : 'bg-emerald-500'}`}></span>
+          {/* Header */}
+          <div className="border-b border-gray-100 pb-2.5 flex items-center justify-between">
+            <div className="flex flex-col">
+              <span className="font-bold text-gray-800 text-sm tracking-tight flex items-center gap-1.5">
+                <Database className="w-4 h-4 text-emerald-600" />
+                {t.dashboardTitle}
+              </span>
+              <span className="text-[10px] text-gray-400 mt-0.5">
+                {t.lastSync} {lastUpdated}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              {/* Lang Switch */}
+              <button
+                id="dashLangToggle"
+                onClick={() => setLanguage(language === 'bn' ? 'en' : 'bn')}
+                className="px-2 py-0.5 rounded border border-gray-200 hover:border-gray-300 active:bg-gray-50 text-[10px] bg-white font-semibold text-gray-600 transition-colors flex items-center gap-1"
+              >
+                <Globe2 className="w-3 h-3 text-gray-400" />
+                {t.btnToggle}
+              </button>
+            </div>
           </div>
-
-          <Database className="w-4 h-4 shrink-0 transition-transform duration-300" />
-          
-          <span>
-            {t.title}: <strong className="font-bold">{toBnNum(totalLogs)}</strong> {language === 'bn' ? 'টি' : (totalLogs === 1 ? 'Batch' : 'Batches')}
-          </span>
-        </motion.button>
-
-        {/* Detailed Information Dashboard Panel */}
-        <AnimatePresence>
-          {isExpanded && (
-            <motion.div
-              id="offlineDashboardDetailsPanel"
-              initial={{ opacity: 0, y: -8, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
-              className="w-80 bg-white border border-gray-150 rounded-2xl p-4 shadow-xl text-gray-800 text-xs flex flex-col gap-3.5"
-            >
-              {/* Header */}
-              <div className="border-b border-gray-100 pb-2.5 flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="font-bold text-gray-800 text-sm tracking-tight flex items-center gap-1.5">
-                    <Database className="w-4 h-4 text-emerald-600" />
-                    {t.dashboardTitle}
-                  </span>
-                  <span className="text-[10px] text-gray-400 mt-0.5">
-                    {t.lastSync} {lastUpdated}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-1.5">
-                  {/* Lang Switch */}
-                  <button
-                    id="dashLangToggle"
-                    onClick={() => setLanguage(language === 'bn' ? 'en' : 'bn')}
-                    className="px-2 py-0.5 rounded border border-gray-200 hover:border-gray-300 active:bg-gray-50 text-[10px] bg-white font-semibold text-gray-600 transition-colors flex items-center gap-1"
-                  >
-                    <Globe2 className="w-3 h-3 text-gray-400" />
-                    {t.btnToggle}
-                  </button>
-                  {/* Close btn */}
-                  <button
-                    id="dashCloseBtn"
-                    onClick={() => setIsExpanded(false)}
-                    className="p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
 
               {/* Tab Switcher */}
               <div className="flex border-b border-gray-100 p-0.5 bg-gray-50 rounded-xl">
@@ -888,9 +848,7 @@ export default function OfflinePlantationDashboard({ onStateChange }: OfflinePla
                 </div>
               )}
 
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   );
