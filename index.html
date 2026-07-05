@@ -274,7 +274,9 @@ tr:hover{background:#eef5ee}
         <div class="form-group"><label class="form-label">ইউনিয়ন <span class="req">*</span></label><input type="text" class="form-input" id="union" required></div>
         <div class="form-group"><label class="form-label">ব্লক <span class="req">*</span></label><input type="text" class="form-input" id="block" required></div>
         <div class="form-group"><label class="form-label">গ্রামের নাম <span class="req">*</span></label><input type="text" class="form-input" id="village" required></div>
-        <div class="form-group"><label class="form-label">বৃক্ষের প্রজাতির নাম <span class="req">*</span></label><input type="text" class="form-input" id="species" list="species-list" required><datalist id="species-list"><option value="মহাগনি"><option value="আকাশমনি"><option value="কড়ই"><option value="গামার"><option value="শিশু"><option value="বরই"><option value="আম"><option value="জাম"><option value="কাঁঠাল"><option value="লিচু"><option value="নারিকেল"><option value="সুপারি"><option value="বট"><option value="অশ্বত্থ"><option value="নিম"><option value="কৃষ্ণচূড়া"><option value="পলাশ"><option value="রেইনট্রি"><option value="গুলমোহর"><option value="দেবদারু"></datalist></div>
+        <div class="form-group"><label class="form-label">বৃক্ষের প্রজাতির নাম <span class="req">*</span></label><input type="text" class="form-input" id="species" list="species-list" required 
+  onblur="checkAddCustomSpecies(this.value)" 
+  placeholder="প্রজাতি লিখুন বা নির্বাচন করুন"><datalist id="species-list"><option value="মহাগনি"><option value="আকাশমনি"><option value="কড়ই"><option value="গামার"><option value="শিশু"><option value="বরই"><option value="আম"><option value="জাম"><option value="কাঁঠাল"><option value="লিচু"><option value="নারিকেল"><option value="সুপারি"><option value="বট"><option value="অশ্বত্থ"><option value="নিম"><option value="কৃষ্ণচূড়া"><option value="পলাশ"><option value="রেইনট্রি"><option value="গুলমোহর"><option value="দেবদারু"></datalist></div>
         <div class="form-group"><label class="form-label">চারার সংখ্যা <span class="req">*</span></label><input type="number" class="form-input" id="quantity" required min="1"></div>
         <div class="form-group"><label class="form-label">রোপণের তারিখ <span class="req">*</span></label><input type="date" class="form-input" id="date" required></div>
         <div class="form-group">
@@ -437,13 +439,59 @@ const BD_REGIONS = {
 };
 
 // Extended Upazila mapping (sample for all districts - can be expanded)
+// Custom options store for user-added entries
+const CUSTOM_OPTIONS_STORE = 'customOptions';
+
 const BD_UPAZILA = {
-  "কুড়িগ্রাম": ["কুড়িগ্রাম সদর","নাগেশ্বরী","ভুরুঙ্গামারী","ফুলবাড়ী","রাজারহাট","উলিপুর","চিলমারী","রৌমারী"],
+  "কুড়িগ্রাম": ["কুড়িগ্রাম সদর","নাগেশ্বরী","ভুরুঙ্গামারী","ফুলবাড়ী","রাজারহাট","উলিপুর","চিলমারী","রৌমারী","চর রাজিবপুর"],
   "রংপুর": ["রংপুর সদর","গঙ্গাচড়া","কাউনিয়া","বদরগঞ্জ","মিঠাপুকুর","পীরগাছা","পীরগঞ্জ","তারাগঞ্জ"],
   "দিনাজপুর": ["দিনাজপুর সদর","বিরামপুর","বীরগঞ্জ","বোচাগঞ্জ","চিরিরবন্দর","ফুলবাড়ী","ঘোড়াঘাট","হাকিমপুর","কাহারোল","খানসামা","নবাবগঞ্জ","পার্বতীপুর"],
   "ঢাকা": ["ধামরাই","দোহার","কেরানীগঞ্জ","নবাবগঞ্জ","সাভার","দক্ষিণ","উত্তর","মোহাম্মদপুর"],
   // ... all other districts follow same pattern
 };
+
+// Species list with user-added support
+const DEFAULT_SPECIES = ["মহাগনি","আকাশমনি","কড়ই","গামার","শিশু","বরই","আম","জাম","কাঁঠাল","লিচু","নারিকেল","সুপারি","বট","অশ্বত্থ","নিম","কৃষ্ণচূড়া","পলাশ","রেইনট্রি","গুলমোহর","দেবদারু"];
+
+async function getCustomOptions(category) {
+  if (!db) await initDB();
+  return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(CUSTOM_OPTIONS_STORE)) { resolve([]); return; }
+    const tx = db.transaction(CUSTOM_OPTIONS_STORE, 'readonly');
+    const store = tx.objectStore(CUSTOM_OPTIONS_STORE);
+    const req = store.get(category);
+    req.onsuccess = () => resolve(req.result ? req.result.values : []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function addCustomOption(category, value) {
+  if (!db) await initDB();
+  if (!db.objectStoreNames.contains(CUSTOM_OPTIONS_STORE)) {
+    // Need to upgrade DB - but we can't easily do that in static app
+    // So we'll store in localStorage as fallback
+    let custom = JSON.parse(localStorage.getItem('custom_' + category) || '[]');
+    if (!custom.includes(value)) {
+      custom.push(value);
+      localStorage.setItem('custom_' + category, JSON.stringify(custom));
+    }
+    return;
+  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(CUSTOM_OPTIONS_STORE, 'readwrite');
+    const store = tx.objectStore(CUSTOM_OPTIONS_STORE);
+    const req = store.get(category);
+    req.onsuccess = () => {
+      let data = req.result || { category: category, values: [] };
+      if (!data.values.includes(value)) {
+        data.values.push(value);
+        store.put(data);
+      }
+      resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
 
 // ── State ──
 let records = [];
@@ -611,7 +659,8 @@ async function syncToTurso() {
 
     showToast(toBn(pending.length) + 'টি রেকর্ড সিঙ্ক করা হয়েছে!', 'success');
     updateSyncStatus('online');
-    renderDashboard();
+    updateSpeciesDatalist();
+  renderDashboard();
   } catch (e) {
     console.error('Sync error:', e);
     showToast('সিঙ্ক ব্যর্থ: ' + e.message, 'error');
@@ -697,7 +746,8 @@ function showTab(tabId) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById(tabId).classList.add('active');
   event.target.closest('.nav-tab').classList.add('active');
-  if (tabId === 'dashboard') renderDashboard();
+  if (tabId === 'dashboard') updateSpeciesDatalist();
+  renderDashboard();
   if (tabId === 'records') renderRecords();
   if (tabId === 'map') setTimeout(renderMap, 100);
   if (tabId === 'reports') renderReport();
@@ -735,16 +785,52 @@ function populateDistricts(prefix) {
   populateUpazilas(prefix);
 }
 
-function populateUpazilas(prefix) {
+async function populateUpazilas(prefix) {
   prefix = prefix || '';
   const districtEl = document.getElementById(prefix + 'district');
   if (!districtEl) return;
   const district = districtEl.value;
-  const upazilas = BD_UPAZILA[district] || [];
+  let upazilas = BD_UPAZILA[district] || [];
+
+  // Add custom upazilas from localStorage
+  const customUpazilas = JSON.parse(localStorage.getItem('custom_upazila_' + district) || '[]');
+  upazilas = [...new Set([...upazilas, ...customUpazilas])].sort();
+
   const el = document.getElementById(prefix + 'upazila');
   if (!el) return;
   el.innerHTML = '<option value="">উপজেলা নির্বাচন করুন</option>';
   upazilas.forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = u; el.appendChild(o); });
+
+  // Add "+ অন্য যোগ করুন" option
+  const addOpt = document.createElement('option');
+  addOpt.value = '__ADD_NEW__';
+  addOpt.textContent = '+ নতুন উপজেলা যোগ করুন';
+  addOpt.style.color = 'var(--accent)';
+  addOpt.style.fontWeight = 'bold';
+  el.appendChild(addOpt);
+
+  // Handle custom addition
+  el.onchange = async function() {
+    if (this.value === '__ADD_NEW__') {
+      const newVal = prompt('নতুন উপজেলার নাম লিখুন:');
+      if (newVal && newVal.trim()) {
+        const trimmed = newVal.trim();
+        // Save to localStorage
+        let custom = JSON.parse(localStorage.getItem('custom_upazila_' + district) || '[]');
+        if (!custom.includes(trimmed)) {
+          custom.push(trimmed);
+          localStorage.setItem('custom_upazila_' + district, JSON.stringify(custom));
+          showToast('"' + trimmed + '" যোগ করা হয়েছে!', 'success');
+        }
+        // Re-populate
+        await populateUpazilas(prefix);
+        // Select the new value
+        el.value = trimmed;
+      } else {
+        this.value = '';
+      }
+    }
+  };
 }
 
 // ── Geo Capture ──
@@ -816,7 +902,8 @@ async function saveEntry(e) {
     }
 
     resetForm();
-    renderDashboard();
+    updateSpeciesDatalist();
+  renderDashboard();
     updatePendingCount();
 
     // Auto-sync if online
@@ -1024,7 +1111,8 @@ async function confirmDelete() {
     await deleteRecordDB(deleteId);
     records = await getAllRecords();
     renderRecords();
-    renderDashboard();
+    updateSpeciesDatalist();
+  renderDashboard();
     showToast('রেকর্ড মুছে ফেলা হয়েছে!', 'success');
   }
   closeModal();
@@ -1172,6 +1260,37 @@ function loadSettings() {
   testTursoConnection();
 }
 
+async function checkAddCustomSpecies(value) {
+  if (!value) return;
+  const allSpecies = [...DEFAULT_SPECIES];
+  // Add custom species from localStorage
+  const customSpecies = JSON.parse(localStorage.getItem('custom_species') || '[]');
+  allSpecies.push(...customSpecies);
+
+  if (!allSpecies.includes(value)) {
+    if (confirm('"' + value + '" তালিকায় নেই। এটি যোগ করতে চান?')) {
+      customSpecies.push(value);
+      localStorage.setItem('custom_species', JSON.stringify(customSpecies));
+      // Update datalist
+      updateSpeciesDatalist();
+      showToast('"' + value + '" প্রজাতি তালিকায় যোগ করা হয়েছে!', 'success');
+    }
+  }
+}
+
+function updateSpeciesDatalist() {
+  const datalist = document.getElementById('species-list');
+  if (!datalist) return;
+  const customSpecies = JSON.parse(localStorage.getItem('custom_species') || '[]');
+  const allSpecies = [...new Set([...DEFAULT_SPECIES, ...customSpecies])].sort();
+  datalist.innerHTML = '';
+  allSpecies.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    datalist.appendChild(opt);
+  });
+}
+
 async function testTursoConnection() {
   if (!TURSO_URL || !TURSO_TOKEN) return;
   try {
@@ -1230,6 +1349,7 @@ async function confirmClear() {
   });
   closeClearModal();
   showToast('সব লোকাল ডেটা মুছে ফেলা হয়েছে', 'success');
+  updateSpeciesDatalist();
   renderDashboard();
   renderRecords();
 }
@@ -1269,6 +1389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateNetStatus();
   updatePendingCount();
 
+  updateSpeciesDatalist();
   renderDashboard();
 
   // Auto-sync every 5 minutes if online
