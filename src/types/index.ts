@@ -1,5 +1,28 @@
 export type UserRole = 'citizen' | 'officer' | 'district_admin' | 'national_director';
 
+/** Profile form role — simplified for registration */
+export type ProfileRole = 'citizen' | 'officer';
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  mobile: string;
+  nid: string;
+  jobId?: string;          // SAAO/official job ID — optional
+  role: ProfileRole;
+  designation?: string;    // e.g. 'SAAO', 'UAO', 'AEO'
+  district?: string;
+  upazila?: string;
+  photoUrl?: string;       // base64 or blob URL
+  xp: number;
+  greenTokens: number;
+  streakCount: number;
+  profileCompletionBonus: boolean; // one-time token for completing profile
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Computed session derived from UserProfile — consumed by UI components */
 export interface UserSession {
   uid: string;
   name: string;
@@ -9,6 +32,8 @@ export interface UserSession {
   xp: number;
   greenTokens: number;
   streakCount: number;
+  /** Full profile reference — null if user hasn't registered yet */
+  profile?: UserProfile | null;
 }
 
 export interface TokenTransaction {

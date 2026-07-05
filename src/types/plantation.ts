@@ -172,6 +172,13 @@ export interface PlantationSubmission {
 
   // ---- App-only extras, not part of the official export ----
 
+  // Verification GPS — separate from planting location.
+  // Used by monitoring officers to record a separate verification point.
+  verificationLatitude?: number;
+  verificationLongitude?: number;
+  verificationAccuracy?: number;
+  verificationTimestamp?: string;
+
   // Site area, walked or estimated (m²) — used only to soft-flag the
   // reported seedling count against DAE's standard planting-distance
   // norms per plant type (see spacingNorms.ts). Reported counts are

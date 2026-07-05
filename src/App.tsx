@@ -15,6 +15,8 @@ import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
 import ProfilePage from './components/plantation/ProfilePage';
 import { saveSubmission } from './utils/submissionStore';
+import { getSubmissionReward } from './lib/db';
+import { useAuth } from './hooks/useAuth';
 import type { PlantationSubmission } from './types/plantation';
 import { 
   Sparkles, 
@@ -27,6 +29,7 @@ import {
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Coins, Star } from 'lucide-react';
 
 // Tabs the iframe still owns (not yet ported natively). 'dashboard' is now
 // native (OfflinePlantationDashboard), so it's no longer in this list.
@@ -50,6 +53,8 @@ export default function App() {
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
   const [currentTab, setCurrentTab] = useState<TabId>('form');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [rewardToast, setRewardToast] = useState<{ xp: number; tokens: number; breakdown: { label: string; xp: number; tokens: number }[] } | null>(null);
+  const { addXp, addTokens } = useAuth();
 
   // Ref to notify MapTab to invalidateSize
   const mapInvalidateRef = useRef<(() => void) | null>(null);
@@ -172,6 +177,17 @@ export default function App() {
 
   const handlePlantationSubmit = (submission: PlantationSubmission) => {
     saveSubmission(submission);
+
+    // Award tokens & XP based on data richness
+    const reward = getSubmissionReward(submission);
+    if (reward.xp > 0) addXp(reward.xp, 'ফর্ম জমা');
+    if (reward.tokens > 0) addTokens(reward.tokens, 'তথ্য পুরস্কার');
+
+    // Show reward toast
+    if (reward.xp > 0 || reward.tokens > 0) {
+      setRewardToast(reward);
+      setTimeout(() => setRewardToast(null), 4000);
+    }
   };
 
   // Active tab label for drawer header
@@ -185,6 +201,52 @@ export default function App() {
       <WelcomeModal />
       <PWAInstaller />
       <SyncToast />
+
+      {/* ======= SUBMISSION REWARD TOAST ======= */}
+      <AnimatePresence>
+        {rewardToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92vw] max-w-sm bg-white rounded-2xl shadow-2xl border border-amber-200 overflow-hidden"
+          >
+            <div className="bg-gradient-to-r from-amber-500 to-emerald-500 px-4 py-2 text-white text-xs font-bold flex items-center gap-1.5">
+              <Star size={14} /> পুরস্কার অর্জিত!
+            </div>
+            <div className="p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="bg-emerald-50 rounded-lg p-1.5">
+                    <Star size={16} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-black text-emerald-700 leading-none">+{rewardToast.xp}</p>
+                    <p className="text-[10px] text-gray-500">XP</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="bg-amber-50 rounded-lg p-1.5">
+                    <Coins size={16} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-black text-amber-700 leading-none">+{rewardToast.tokens}</p>
+                    <p className="text-[10px] text-gray-500">গ্রিন টোকেন</p>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-1.5 space-y-0.5 max-h-24 overflow-y-auto">
+                {rewardToast.breakdown.map((b, i) => (
+                  <div key={i} className="flex items-center justify-between text-[11px] text-gray-600">
+                    <span>{b.label}</span>
+                    <span className="text-gray-400 font-mono">+{b.xp}XP +{b.tokens}টোকেন</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ======= TOP HEADER ======= */}
       <header className="flex-shrink-0 bg-gradient-to-r from-emerald-800 to-teal-850 text-white shadow-md relative no-print" style={{ zIndex: 30 }}>
