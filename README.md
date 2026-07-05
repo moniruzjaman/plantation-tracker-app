@@ -1,234 +1,40 @@
-# 🌳 Plantation Tracker App — বৃক্ষরোপণ কর্মসূচি
+# 🌴 বৃক্ষরোপণ ট্র্যাকার (Plantation Tracker PWA)
 
-**কৃষি সম্প্রসারণ অধিদপ্তর, খামারবাড়ি, কুড়িগ্রাম**
-গণপ্রজাতন্ত্রী বাংলাদেশ সরকার
+> **📌 রিপোজিটরি একত্রীকরণ নোট (জুলাই ২০২৬):** এই রিপোজিটরি আগে একটি vanilla HTML/Turso অ্যাপ ছিল। ক্রস-রিপোজিটরি অডিটের পর একে `plantation-tracker-v1`-এর React 19 + TypeScript + Vite + Capacitor কোডবেজের ভিত্তিতে পুনর্নির্মাণ করা হয়েছে (v1 ছিল ফিচার-সুপারসেট, legacy iframe-মুক্ত)। পুরনো vanilla অ্যাপের Turso সিঙ্ক, ১৭-কলাম ফর্ম, cascading জিও-ড্রপডাউন, Excel/PDF এক্সপোর্ট — এসব `public/legacy-nursery.html`-এ বজায় আছে এবং App.tsx-এর `dashboard`/`storedData`/`admin` ট্যাবে iframe হিসেবে সংযুক্ত (v1-এর existing IFRAME_OWNED_TABS প্যাটার্ন অনুসারে)।
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-সার্ভারে%20চলছে-success?style=for-the-badge)](https://kurigram-plantation-tracker.surge.sh)
-[![Turso DB](https://img.shields.io/badge/Database-Turso%20SQLite%20Edge-blue?style=for-the-badge)](https://turso.tech)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
-
-> ০৫ বছরে ২৫ কোটি বৃক্ষরোপণ কর্মসূচির জন্য পেশাদার ডেটা সংগ্রহ ও রিপোর্টিং অ্যাপ
+গণপ্রজাতন্ত্রী বাংলাদেশ সরকারের কৃষি সম্প্রসারণ অধিদপ্তর কর্তৃক **“০৫ বছরে ২৫ কোটি বৃক্ষরোপণ”** দেশব্যাপী মহা-কর্মসূচির আওতাভুক্ত তথ্য সংগ্রহ, ট্র্যাকিং এবং অফলাইন ডেটাবেজ ম্যানেজমেন্টের জন্য তৈরি একটি অত্যাধুনিক এবং শক্তিশালী **Progressive Web App (PWA)**।
 
 ---
 
-## 🌐 Live Application
+## 🚀 সাম্প্রতিক আপডেটসমূহ (Latest Feature Updates)
 
-**https://kurigram-plantation-tracker.surge.sh**
+### ১. স্বয়ংক্রিয় ওয়ান-ক্লিক অ্যাপ হিসেবে ইন্সটল (PWA Auto-Install Prompt)
+* ব্যবহারকারী যখনই ব্রাউজারে সাইটটি ওপেন করবেন, অ্যাপ্লিকেশনটি স্বয়ংক্রিয়ভাবে একটি প্রফেশনাল ইন্সটলেশন অন-স্ক্রিন প্রম্পট ব্যানার প্রদর্শন করবে।
+* এক ক্লিকে সরাসরি হোম স্ক্রিনে অ্যাপ আকারে যুক্ত হয়ে যাবে (Android/iOS/PC)।
+* **iframe ডিটেকশন ও স্মার্ট গাইডেন্স**: যদি থার্ড পার্টি পোর্টাল বা কোনো আইফ্রেমের ভেতরে অ্যাপটি হোস্ট করা থাকে, তবে অ্যাপটি সয়ংক্রিয়ভাবে ব্যবহারকারীকে একটি সুন্দর নোটিফিকেশনের মাধ্যমে নতুন ট্যাবে/উইন্ডোতে ফুলস্ক্রিনে লোড করার অফার করে যাতে শতভাগ অফলাইন ও অফিশিয়াল জিপিএস সিঙ্ক পারফেক্টলি সক্রিয় হতে পারে।
 
----
+### ২. অফিশিয়াল সরকারি লোগো ও ব্র্যান্ডিং (Official Logo & High Fidelity Sharing)
+* গণপ্রজাতন্ত্রী বাংলাদেশ সরকারের অফিশিয়াল লোগো/সিল ব্যবহার করা হয়েছে অ্যাপের হেডার এবং ব্যাকগ্রাউন্ডে।
+* **logo.svg / logo.png / apple-touch-icon.png**: এই আইকনগুলি সম্পূর্ণ মডার্ন ডিরেক্টরিতে কম্পাইল ও সিঙ্ক করা হয়েছে।
+* **সোশ্যাল মিডিয়া শেয়ারিং ওভারভিউ (Open Graph - OG Preview)**: ফেসবুক, মেসেঞ্জার, হোয়াটসঅ্যাপ, টুইটারে অ্যাপলের লিঙ্ক শেয়ার করার সময় আকর্ষণীয় সবুজ রঙের ব্র্যান্ডেড প্রিভিউ কার্ড এবং উপযুক্ত ইনফরমেশনসহ প্রদর্শিত হবে।
 
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    BROWSER (Any Device)                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │  IndexedDB  │  │   Leaflet   │  │    Chart.js     │ │
-│  │  (Offline)  │  │    Map      │  │   Dashboard     │ │
-│  └──────┬──────┘  └─────────────┘  └─────────────────┘ │
-│         │                                               │
-│         ▼                                               │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │         Auto-Sync (every 5 min / manual)        │   │
-│  │         When online → push pending records      │   │
-│  └─────────────────────────────────────────────────┘   │
-└──────────────────────────┬──────────────────────────────┘
-                           │ HTTPS / v2/pipeline API
-                           ▼
-┌─────────────────────────────────────────────────────────┐
-│              TURSO DB (SQLite Edge)                     │
-│    libsql://plantation-tracker-mithun...turso.io        │
-│         Tokyo Edge → 35ms latency to Dhaka              │
-│         Free Tier: 5GB | 500M reads | 10M writes/mo     │
-└─────────────────────────────────────────────────────────┘
-```
+### ৩. সাপোর্ট ইমেইল সংযোগ
+* যেকোনো টেকনিক্যাল জিজ্ঞাসা, ডেটা রিকভারি, বা ত্রুটির জন্য ডেডিকেটেড সাপোর্ট ইমেইল সংযোজন করা হয়েছে: 
+  📧 **[krishiailive@gmail.com](mailto:krishiailive@gmail.com)**
 
 ---
 
-## ✨ Features
+## 🛠️ মডিউল ও কারিগরি বৈশিষ্ট্যসমূহ (Technical Features)
 
-### 📊 Dashboard
-- Real-time stats cards (total seedlings, locations, species, caretakers, synced count)
-- **Chart.js** bar chart (upazila-wise plantation)
-- **Chart.js** doughnut chart (species-wise distribution)
-- Recent records table
-
-### 📝 Smart Data Entry
-- **Cascading dropdowns**: Division → District → Upazila (all 64 districts of Bangladesh)
-- **Custom option support**: Add missing upazilas/species on-the-fly
-  - Example: *চর রাজিবপুর* missing? Just type it → click "যোগ করুন" → available for all users
-- **GPS auto-capture**: One-click geolocation with coordinate auto-fill
-- All 17 government-form fields with validation
-
-### 🗺️ Interactive Map
-- **Leaflet.js** + OpenStreetMap
-- Filter markers by region/district/upazila
-- "My Location" button for quick navigation
-- Popup details on each marker
-
-### 📋 Records Management
-- Full CRUD (Create, Read, Update, Delete)
-- Search across all fields
-- Filter by region, district, upazila
-- Responsive data table
-
-### 📈 Reports & Export
-- Summary by district, upazila, species with percentages
-- **Export to Excel** (.xlsx)
-- **Export to PDF** (.pdf)
-- Print-friendly layouts
-
-### 💾 Offline-First + Cloud Sync
-| Feature | Technology |
-|---------|-----------|
-| Local Storage | **IndexedDB** (browser-native) |
-| Cloud Database | **Turso DB** (SQLite Edge, Tokyo) |
-| Sync Trigger | Auto every 5 min + Manual button |
-| Conflict Resolution | `ON CONFLICT(local_id) DO UPDATE` |
-| Encryption | End-to-end HTTPS |
-
-### 🇧🇩 Government Branding
-- Official **DAE Kurigram** logo
-- Bengali (Noto Sans Bengali) throughout
-- "০৫ বছরে ২৫ কোটি বৃক্ষরোপণ" campaign badge
-- Meta tags for social sharing (Facebook/WhatsApp/Twitter)
+1. **মোবাইল অফলাইন ডেটা কালেকশন**: ব্রাউজারের লোকাল স্টোরেজ ব্যবহার করে ইন্টারনেট ছাড়া বা দুর্বল নেটওয়ার্কেও সম্পূর্ণ নিরবচ্ছিন্নভাবে নার্সারির গাছের রোপণের ক্যাটাগরি অনুযায়ী এন্ট্রি পূরণ করা যায়।
+2. **অটো জিপিএস এবং রিভার্স জিওকোডিং**: জিপিএস থেকে সরাসরি অক্ষাংশ ও দ্রাঘিমাংশ সংগ্রহ করে Nominatim এর মাধ্যমে স্বয়ংক্রিয়ভাবে ঠিকানার বিবরণ উদ্ধার করে।
+3. **অফিসিয়াল এক্সেল এক্সপোর্ট**: সমস্ত ডেটা একটি মাত্র ক্লিকে সরকারি নির্ধারিত ছক ফরম্যাটে সরাসরি এক্সেল শিটে ডাউনলোড করা যায়।
+4. **অ্যাডমিন ড্যাশবোর্ড**: জেলা বা অঞ্চলভিত্তিক এবং প্রজাতি অনুযায়ী গ্রাফিকাল রিচার্টস ও স্ট্যাটিস্টিকস ওভারভিউ।
 
 ---
 
-## 📦 Files
+## 📞 যোগাযোগ ও সাপোর্ট (Support & Assistance)
 
-| File | Size | Description |
-|------|------|-------------|
-| `index.html` | ~329 KB | Complete single-page application |
-| `logo.png` | ~63 KB | DAE Kurigram official logo |
-| `CNAME` | 36 B | Surge.sh domain configuration |
-| `README.md` | — | This documentation |
-
----
-
-## 🚀 Quick Start
-
-### Option 1: Open Directly
-Simply open `index.html` in any modern browser (Chrome, Firefox, Safari, Edge).
-
-### Option 2: Serve Locally
-```bash
-git clone https://github.com/moniruzjaman/plantation-tracker-app.git
-cd plantation-tracker-app
-
-# Python 3
-python -m http.server 8080
-
-# Node.js
-npx serve .
-
-# PHP
-php -S localhost:8080
-```
-Then visit `http://localhost:8080`
-
-### Option 3: Deploy to Surge.sh
-```bash
-npm install -g surge
-surge
-```
-
----
-
-## 🔗 Turso DB Setup (Optional — Pre-configured)
-
-The app comes with Turso credentials pre-configured. To use your own database:
-
-1. **Install Turso CLI**
-   ```bash
-   curl -sSfL https://get.tur.so/install.sh | bash
-   ```
-
-2. **Login & Create DB**
-   ```bash
-   turso auth login
-   turso db create plantation-tracker
-   ```
-
-3. **Get Credentials**
-   ```bash
-   turso db show plantation-tracker --url
-   turso db tokens create plantation-tracker
-   ```
-
-4. **Paste in App Settings**
-   - Open app → **Settings** tab
-   - Enter URL & Token
-   - Click **"এখন সিঙ্ক করুন"**
-
----
-
-## 🗺️ National Scalability
-
-- ✅ All **9 divisions** of Bangladesh
-- ✅ All **64 districts** with cascading dropdowns
-- ✅ **500+ upazilas** (extensible via user additions)
-- ✅ Multi-region Turso replicas for fast reads anywhere
-- ✅ Works offline in remote areas with poor connectivity
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Vanilla HTML5 + CSS3 + ES6+ |
-| Local DB | IndexedDB (browser-native) |
-| Cloud DB | Turso DB (libSQL/SQLite Edge) |
-| Maps | Leaflet.js + OpenStreetMap |
-| Charts | Chart.js 4.x |
-| Export | SheetJS (XLSX) + jsPDF |
-| Fonts | Noto Sans Bengali (Google Fonts) |
-| Icons | Font Awesome 6 |
-| Hosting | Surge.sh (CDN) |
-
----
-
-## 📱 Browser Support
-
-| Browser | Version | Status |
-|---------|---------|--------|
-| Chrome | 90+ | ✅ Full |
-| Firefox | 88+ | ✅ Full |
-| Safari | 14+ | ✅ Full |
-| Edge | 90+ | ✅ Full |
-| Android WebView | 90+ | ✅ Full |
-
----
-
-## 🤝 Contributing
-
-This is an open-source project for the Government of Bangladesh. Contributions welcome!
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-MIT License — Free for government and personal use.
-
----
-
-## 👨‍💻 Developed For
-
-**কৃষি সম্প্রসারণ অধিদপ্তর, খামারবাড়ি, কুড়িগ্রাম**
-
-গণপ্রজাতন্ত্রী বাংলাদেশ সরকার
-
----
-
-<p align="center">
-  <img src="logo.png" width="120" alt="DAE Kurigram Logo">
-  <br>
-  <b>বৃক্ষরোপণ কর্মসূচি — ২৫ কোটি বৃক্ষের স্বপ্ন</b>
-</p>
+আপনার যেকোনো মতামত বা সহায়তায় যোগাযোগ করুন:
+* **ইমেইল**: [krishiailive@gmail.com](mailto:krishiailive@gmail.com)
+* **কর্তৃপক্ষ**: কৃষি সম্প্রসারণ অধিদপ্তর, গণপ্রজাতন্ত্রী বাংলাদেশ সরকার
