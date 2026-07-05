@@ -9,8 +9,7 @@ import GeolocationIndicator, { GeoState } from './components/GeolocationIndicato
 import WelcomeModal from './components/WelcomeModal';
 import PWAInstaller from './components/PWAInstaller';
 import SyncToast from './components/SyncToast';
-import OfflinePlantationDashboard, { Submission } from './components/OfflinePlantationDashboard';
-import MobileControlCenter from './components/MobileControlCenter';
+import OfflinePlantationDashboard from './components/OfflinePlantationDashboard';
 import AIAssistant from './components/AIAssistant';
 import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
@@ -22,31 +21,28 @@ import {
   ClipboardList, 
   LayoutDashboard, 
   Map as MapIcon, 
-  Database, 
   Sprout,
   UserCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Tabs the iframe still owns (not yet ported natively).
-const IFRAME_OWNED_TABS = ['dashboard', 'storedData', 'admin'] as const;
+// Tabs the iframe still owns (not yet ported natively). 'dashboard' is now
+// native (OfflinePlantationDashboard), so it's no longer in this list.
+const IFRAME_OWNED_TABS = ['storedData', 'admin'] as const;
 
-// Navigation tabs definition
-// Fix #14: Admin removed from mobile bottom bar (too crowded with 6 items).
-// Desktop nav still shows all tabs for discoverability.
+// Navigation tabs definition — 4 pages, per user request: Form, Map,
+// Profile, Dashboard. Admin stays reachable via the ProfilePage's admin
+// link (not a top-level tab) for admin/director roles, same as before.
 const tabs = [
   { id: 'form', label: 'ফর্ম', icon: ClipboardList, mobile: true },
-  { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, mobile: true },
   { id: 'map', label: 'ম্যাপ', icon: MapIcon, mobile: true },
-  { id: 'storedData', label: 'আমার তথ্য', icon: Database, mobile: true },
   { id: 'profile', label: 'প্রোফাইল', icon: UserCircle, mobile: true },
-  { id: 'admin', label: 'এডমিন', icon: Database, mobile: false }, // reuses Database icon; admin accessed from ProfilePage
+  { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, mobile: true },
 ] as const;
 
 export default function App() {
   const [networkState, setNetworkState] = useState<NetworkStatusData | null>(null);
   const [geoState, setGeoState] = useState<GeoState | null>(null);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [aiInitialTab, setAiInitialTab] = useState<'chat' | 'diagnose' | undefined>(undefined);
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
@@ -164,13 +160,6 @@ export default function App() {
     <div className="flex flex-col w-full h-screen overflow-hidden bg-slate-50 font-sans" style={{ height: '100vh' }}>
       <NetworkStatus onStateChange={setNetworkState} />
       <GeolocationIndicator onStateChange={setGeoState} />
-      <OfflinePlantationDashboard onStateChange={setSubmissions} />
-      <MobileControlCenter 
-        networkState={networkState} 
-        geoState={geoState} 
-        submissions={submissions}
-        userEmail="mithun.hstu@gmail.com"
-      />
       <WelcomeModal />
       <PWAInstaller />
       <SyncToast />
@@ -247,15 +236,24 @@ export default function App() {
           className="absolute inset-0 overflow-y-auto"
           style={{ display: currentTab === 'profile' ? 'block' : 'none' }}
         >
-          <ProfilePage />
+          <ProfilePage networkState={networkState} geoState={geoState} />
         </div>
 
-        {/* Legacy iframe still serves dashboard / storedData / admin
-            until those are ported natively too. */}
+        {/* Native dashboard tab — was previously a desktop-only collapsed
+            floating widget; now a real page like the other 3 tabs. */}
+        <div
+          className="absolute inset-0 overflow-y-auto"
+          style={{ display: currentTab === 'dashboard' ? 'block' : 'none' }}
+        >
+          <OfflinePlantationDashboard />
+        </div>
+
+        {/* Legacy iframe still serves storedData / admin until those are
+            ported natively too. */}
         <iframe 
           id="app-iframe"
           src="legacy-nursery.html" 
-          style={{ display: ['form', 'map', 'profile'].includes(currentTab) ? 'none' : 'block', width: '100%', height: '100%', border: 'none' }}
+          style={{ display: ['form', 'map', 'profile', 'dashboard'].includes(currentTab) ? 'none' : 'block', width: '100%', height: '100%', border: 'none' }}
           title="Plantation Dashboard" 
           allow="geolocation"
           onLoad={(e) => {
@@ -281,7 +279,7 @@ export default function App() {
         />
       </main>
 
-      {/* Fix #14: Mobile bottom bar shows only mobile:true tabs (5 items, not 6) */}
+      {/* 4 tabs, all shown on both mobile bottom bar and desktop nav */}
       <nav className="md:hidden flex-shrink-0 bg-white border-t border-slate-100/80 shadow-2xl flex items-center justify-around h-16 px-1 z-30 relative no-print pb-safe">
         {tabs.filter((t) => t.mobile).map((tab) => {
           const Icon = tab.icon;

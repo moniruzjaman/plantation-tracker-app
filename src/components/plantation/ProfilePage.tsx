@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { getTokenHistory } from '../../utils/tokenHistory';
 import { toBnNum } from '../../utils/mapHelper';
-import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck } from 'lucide-react';
+import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck, Wifi, WifiOff, CircleDot, Copy, Check, HardDrive, HelpCircle, ChevronRight, Share2 } from 'lucide-react';
 import type { UserRole } from '../../types';
+import type { GeoState } from '../GeolocationIndicator';
+import type { NetworkStatusData } from '../NetworkStatus';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   citizen: 'নাগরিক',
@@ -20,9 +23,89 @@ function levelFromXp(xp: number) {
   return { level, intoLevel, progressPct: (intoLevel / XP_PER_LEVEL) * 100 };
 }
 
-export default function ProfilePage() {
+// GPS precision rating — ported from MobileControlCenter.
+function getGpsPrecision(meters: number) {
+  if (meters < 30) return { label: 'অত্যন্ত নির্ভুল', color: 'text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100' };
+  if (meters < 100) return { label: 'সাধারণ সিগন্যাল', color: 'text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100' };
+  return { label: 'দুর্বল সিগন্যাল', color: 'text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100' };
+}
+
+interface ProfilePageProps {
+  networkState?: NetworkStatusData | null;
+  geoState?: GeoState | null;
+}
+
+export default function ProfilePage({ networkState, geoState }: ProfilePageProps) {
   const { session, role } = useAuth();
   const history = getTokenHistory();
+  const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [ruralDataSaver, setRuralDataSaver] = useState(() => localStorage.getItem('rural_data_saver_active') === 'true');
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'rural_data_saver_active') {
+        setRuralDataSaver(e.newValue === 'true');
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const handleToggleDataSaver = () => {
+    const nextVal = !ruralDataSaver;
+    setRuralDataSaver(nextVal);
+    localStorage.setItem('rural_data_saver_active', nextVal ? 'true' : 'false');
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'rural_data_saver_active',
+      newValue: nextVal ? 'true' : 'false'
+    }));
+    const iframe = document.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'rural-data-saver-change', enabled: nextVal }, '*');
+    }
+  };
+
+  const handleCopyCoords = () => {
+    if (geoState?.coords) {
+      const text = `${geoState.coords.latitude.toFixed(6)}, ${geoState.coords.longitude.toFixed(6)}`;
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch((err) => {
+        console.warn('Coordinates copying failed:', err);
+      });
+    }
+  };
+
+  const handleShare = () => {
+    const shareData = {
+      title: 'বৃক্ষরোপণ ট্র্যাকার',
+      text: '৫ বছরে ২৫ কোটি বৃক্ষ রোপণ; জাতীয় মহা উদ্দ্যোগে সম্পৃক্ত হতে প্রয়োজনীয় তথ্য।',
+      url: 'https://kurigram-plantation-tracker.surge.sh/',
+    };
+    if (navigator.share) {
+      navigator.share(shareData).catch((err) => {
+        if (err.name === 'AbortError' || err.message?.toLowerCase().includes('cancel') || err.message?.toLowerCase().includes('abort')) return;
+        navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
+          setShareCopied(true);
+          setTimeout(() => setShareCopied(false), 2000);
+        }).catch(() => {});
+      });
+    } else {
+      navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2000);
+      }).catch(() => {});
+    }
+  };
+
+  const handleOpenUserGuide = () => {
+    const guideBtn = document.getElementById('btnShowWelcomeHelp');
+    if (guideBtn) guideBtn.click();
+  };
+
+  const isOnline = networkState ? networkState.isOnline : true;
 
   if (!session) {
     return <div className="p-4 text-sm text-gray-400 text-center">লোড হচ্ছে...</div>;
@@ -105,6 +188,131 @@ export default function ProfilePage() {
           <span className="text-sm font-semibold">এডমিন প্যানেল</span>
         </button>
       )}
+
+      {/* Network & GPS status — ported from the mobile control center */}
+      <section className="bg-white rounded-xl p-4 shadow-sm space-y-3">
+        <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-1.5">
+          {isOnline ? <Wifi size={16} className="text-emerald-600" /> : <WifiOff size={16} className="text-amber-600" />}
+          নেটওয়ার্ক ও অবস্থান
+        </h3>
+
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-500 font-medium">ইন্টারনেট সংযোগ:</span>
+          <span className={`font-black uppercase tracking-wide flex items-center gap-1.5 ${isOnline ? 'text-emerald-600' : 'text-amber-600'}`}>
+            <CircleDot className={`w-3.5 h-3.5 ${isOnline ? 'text-emerald-500' : 'text-amber-500 animate-pulse'}`} />
+            {isOnline ? 'সংযুক্ত' : 'সংযোগ বিচ্ছিন্ন'}
+          </span>
+        </div>
+
+        {networkState?.storageEstimate && (
+          <div className="flex flex-col gap-1 border-t border-gray-100 pt-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-gray-500 font-medium flex items-center gap-1">
+                <HardDrive className="w-3.5 h-3.5 text-gray-400" /> ডিভাইস স্টোরেজ স্পেস:
+              </span>
+              <span className="font-bold text-gray-700">
+                {networkState.storageEstimate.used} MB / {networkState.storageEstimate.total} GB
+              </span>
+            </div>
+            <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden mt-0.5">
+              <div className="bg-emerald-600 h-full rounded" style={{ width: `${networkState.storageEstimate.percent}%` }} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-xs border-t border-gray-100 pt-2">
+          <span className="text-gray-500 font-medium">ভৌগোলিক স্থানাঙ্ক:</span>
+          {geoState?.coords ? (
+            <div className="flex items-center gap-1.5 font-bold text-gray-800 font-mono">
+              <span>{geoState.coords.latitude.toFixed(5)}, {geoState.coords.longitude.toFixed(5)}</span>
+              <button
+                onClick={handleCopyCoords}
+                className="p-1 rounded bg-white border border-gray-200 active:bg-gray-100 text-gray-500 active:text-gray-800"
+                title="স্থানাঙ্ক কপি করুন"
+              >
+                {copied ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </div>
+          ) : (
+            <span className="text-gray-400 italic font-mono">লোকেশন ট্র্যাক করা হচ্ছে...</span>
+          )}
+        </div>
+
+        {geoState?.coords && (
+          <div className="flex items-center justify-between text-xs border-t border-gray-100 pt-2">
+            <span className="text-gray-500 font-medium">অবস্থানের নির্ভুলতা:</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-gray-700">{toBnNum(Math.round(geoState.coords.accuracy))} মিটার</span>
+              <span className={getGpsPrecision(geoState.coords.accuracy).color}>
+                {getGpsPrecision(geoState.coords.accuracy).label}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {geoState?.error && (
+          <div className="p-2.5 bg-red-50 border border-red-150 text-red-800 text-[10.5px] rounded-xl leading-relaxed">
+            <strong className="font-bold block mb-0.5">জিপিএস ত্রুটি:</strong>
+            <span>{geoState.error}</span>
+          </div>
+        )}
+
+        {/* Rural Data Saver toggle */}
+        <div className={`p-3 rounded-xl border flex flex-col gap-2 ${
+          ruralDataSaver ? 'bg-amber-50/70 border-amber-200 text-amber-900' : 'bg-emerald-50/40 border-emerald-100 text-emerald-900'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm">🌾</span>
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold">গ্রামীণ ডাটা সেভার মোড</span>
+                <span className="text-[9px] text-gray-500 font-medium">ডাটা ও ব্যাটারি সাশ্রয় করুন</span>
+              </div>
+            </div>
+            <button
+              onClick={handleToggleDataSaver}
+              className={`w-10 h-5 rounded-full p-0.5 transition-colors cursor-pointer flex items-center ${
+                ruralDataSaver ? 'bg-amber-500 justify-end' : 'bg-gray-300 justify-start'
+              }`}
+            >
+              <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-500 leading-relaxed mt-1">
+            {ruralDataSaver
+              ? 'সক্রিয়: স্যাটেলাইট ম্যাপ বন্ধ, এআই ছবি কম্প্রেশন ৯৯% সচল, ডেটা ট্রান্সফার সীমাবদ্ধ।'
+              : 'অফলাইনে আছেন? ডাটা সেভার চালু করলে আপনার ইন্টারনেট খরচ বিপুল পরিমাণ কমে যাবে।'}
+          </p>
+        </div>
+      </section>
+
+      {/* Tutorial + Share — ported from the mobile control center */}
+      <section className="bg-white rounded-xl p-4 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between bg-emerald-50/30 border border-emerald-100/40 p-2.5 rounded-xl">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-bold text-gray-800 text-[11px] flex items-center gap-1.5">
+              <HelpCircle className="w-4 h-4 text-green-600" /> অ্যাপ্লিকেশন ব্যবহার নির্দেশিকা
+            </span>
+            <span className="text-[10px] text-gray-500 leading-normal">
+              কিভাবে তথ্য অফলাইনে সংরক্ষণ ও সিঙ্ক করতে হবে তা বিস্তারিত জানুন।
+            </span>
+          </div>
+          <button
+            onClick={handleOpenUserGuide}
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10.5px] transition-colors shadow flex items-center gap-0.5 cursor-pointer shrink-0"
+          >
+            টিউটোরিয়াল <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <button
+          onClick={handleShare}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-slate-50 text-slate-700 rounded-lg text-xs font-bold border border-slate-100 hover:bg-slate-100 transition-colors"
+        >
+          {shareCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
+          {shareCopied ? 'লিঙ্ক কপি করা হয়েছে!' : 'অ্যাপটি শেয়ার করুন'}
+        </button>
+      </section>
 
       {/* Recent activity */}
       <section className="bg-white rounded-xl p-4 shadow-sm">
