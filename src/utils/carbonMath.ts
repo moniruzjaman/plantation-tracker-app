@@ -1,18 +1,19 @@
-import { SeedlingItem } from '../types';
+import type { SeedlingEntry } from '../types/plantation';
+import type { SeedlingItem } from '../types';
 
 /**
  * Bangladesh Forestry Biomass Carbon Sequestration Formulas
  * References: Bangladesh Forest Department (BFD) & IPCC Tier 2 Silviculture guidelines.
  * Sequestration rates represent average kg of CO2 sequestered per tree per year after reaching maturity.
  */
-export const BANGLaDESH_SPECIES_CO2_RATES: Record<string, number> = {
+export const BANGLADESH_SPECIES_CO2_RATES: Record<string, number> = {
   // Forest species
   'শাল': 22.4, // Shorea robusta (Shal)
   'গর্জন': 24.1, // Dipterocarpus turbinatus (Garjan)
   'সেগুন': 20.8, // Tectona grandis (Teak)
   'মেহগনি': 19.5, // Swietenia macrophylla (Mahogany)
   'ইউক্যালিপটাস': 21.0, // Eucalyptus (High-absorption, fast grower)
-  'কড়ই': 18.2, // Albizia lebbeck (Karat)
+  'কড়ই': 18.2, // Albizia lebbeck (Karat)
   'গামার': 17.5, // Gmelina arborea (Gamari)
   'বাবলা': 15.6, // Acacia nilotica (Bablah)
 
@@ -21,7 +22,7 @@ export const BANGLaDESH_SPECIES_CO2_RATES: Record<string, number> = {
   'কাঁঠাল': 15.2, // Artocarpus heterophyllus (Jackfruit)
   'জাম': 17.8, // Syzygium cumini (Black plum)
   'লিচু': 12.4, // Litchi chinensis (Litchi)
-  'পেয়ারা': 9.8,  // Psidium guajava (Guava)
+  'পেয়ারা': 9.8,  // Psidium guajava (Guava)
   'নারকেল': 14.5, // Cocos nucifera (Coconut)
   'সুপারি': 8.6,  // Areca catechu (Betel nut)
 
@@ -33,8 +34,32 @@ export const BANGLaDESH_SPECIES_CO2_RATES: Record<string, number> = {
   'বহেরা': 16.2,  // Terminalia bellirica (Bahera)
 };
 
+// Species categories for V2 flat seedling list
+const FRUIT_SPECIES = new Set(['আম', 'কাঁঠাল', 'জাম', 'লিচু', 'পেয়ারা', 'নারকেল', 'সুপারি', 'am', 'jackfruit', 'lichee', 'guava', 'coconut']);
+const MEDICINAL_SPECIES = new Set(['নিম', 'অর্জুন', 'আমলকী', 'হরিতকী', 'বহেরা', 'neem', 'arjun', 'amla', 'haritaki', 'bahera']);
+
+export function getSpeciesCategory(name: string): 'fruit' | 'forest' | 'medicinal' {
+  if (FRUIT_SPECIES.has(name)) return 'fruit';
+  if (MEDICINAL_SPECIES.has(name)) return 'medicinal';
+  return 'forest';
+}
+
 /**
- * Calculates estimated CO2 sequestration in Metric Tons per year for a set of seedlings
+ * V2: Calculate CO2 sequestration from flat SeedlingEntry[] (PlantationSubmission.seedlings)
+ */
+export function calculateCarbonV2(seedlings: SeedlingEntry[]): number {
+  let totalKgPerYear = 0;
+  for (const s of seedlings) {
+    if (!s.count || s.count <= 0) continue;
+    const rate = BANGLADESH_SPECIES_CO2_RATES[s.speciesName] || 15.0;
+    totalKgPerYear += s.count * rate;
+  }
+  return parseFloat((totalKgPerYear / 1000).toFixed(3));
+}
+
+/**
+ * @deprecated Use calculateCarbonV2 for new code.
+ * Legacy: Calculates estimated CO2 sequestration from category-split arrays.
  */
 export function calculateCarbonSequestration(
   fruit: SeedlingItem[],
@@ -48,9 +73,7 @@ export function calculateCarbonSequestration(
     list.forEach((item) => {
       const count = (item.count || 0) + (item.graftingCount || 0);
       if (count <= 0) return;
-
-      // Find specific rate or default to standard generic tree (15 kg CO2/yr)
-      const rate = BANGLaDESH_SPECIES_CO2_RATES[item.speciesName] || 15.0;
+      const rate = BANGLADESH_SPECIES_CO2_RATES[item.speciesName] || 15.0;
       totalKgPerYear += count * rate;
     });
   };
@@ -59,7 +82,6 @@ export function calculateCarbonSequestration(
   processList(forest);
   processList(medicinal);
 
-  // Convert kg to Metric Tons
   const tons = totalKgPerYear / 1000;
   return parseFloat(tons.toFixed(3));
 }
