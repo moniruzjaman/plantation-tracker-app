@@ -3,6 +3,8 @@
 
 @theme {
   --font-sans: "Noto Sans Bengali", ui-sans-serif, system-ui, sans-serif;
+  --color-teal-850: #115e59;
+  --color-slate-850: #172033;
 }
 
 html, body, #root {
@@ -12,4 +14,66 @@ html, body, #root {
   width: 100%;
   overflow: hidden;
   font-family: "Noto Sans Bengali", sans-serif;
+}
+
+/* Safe area support for iOS notch + home indicator */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-area-left {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.safe-area-right {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Leaflet map must fill its container completely */
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 1;
+}
+
+/* Fix Leaflet tiles rendering in flex/absolute containers */
+.leaflet-pane {
+  z-index: 1 !important;
+}
+.leaflet-tile-pane {
+  z-index: 1 !important;
+}
+.leaflet-overlay-pane {
+  z-index: 2 !important;
+}
+
+/* Ensure bottom nav is always visible on mobile */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-bottom-nav {
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Smooth scroll for form sections on desktop */
+@media (min-width: 768px) {
+  .form-scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  .form-scroll-area::-webkit-scrollbar {
+    width: 6px;
+  }
+  .form-scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .form-scroll-area::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 3px;
+  }
+}
+
+/* Prevent iOS bounce scroll on the app shell */
+html {
+  overscroll-behavior: none;
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import NetworkStatus, { NetworkStatusData } from './components/NetworkStatus';
 import GeolocationIndicator, { GeoState } from './components/GeolocationIndicator';
 import WelcomeModal from './components/WelcomeModal';
@@ -22,7 +22,9 @@ import {
   LayoutDashboard, 
   Map as MapIcon, 
   Sprout,
-  UserCircle
+  UserCircle,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -30,15 +32,15 @@ import { motion, AnimatePresence } from 'motion/react';
 // native (OfflinePlantationDashboard), so it's no longer in this list.
 const IFRAME_OWNED_TABS = ['storedData', 'admin'] as const;
 
-// Navigation tabs definition — 4 pages, per user request: Form, Map,
-// Profile, Dashboard. Admin stays reachable via the ProfilePage's admin
-// link (not a top-level tab) for admin/director roles, same as before.
+// Navigation tabs definition — 4 pages: Form, Map, Profile, Dashboard.
 const tabs = [
-  { id: 'form', label: 'ফর্ম', icon: ClipboardList, mobile: true },
-  { id: 'map', label: 'ম্যাপ', icon: MapIcon, mobile: true },
-  { id: 'profile', label: 'প্রোফাইল', icon: UserCircle, mobile: true },
-  { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard, mobile: true },
+  { id: 'form', label: 'ফর্ম', icon: ClipboardList },
+  { id: 'map', label: 'ম্যাপ', icon: MapIcon },
+  { id: 'profile', label: 'প্রোফাইল', icon: UserCircle },
+  { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard },
 ] as const;
+
+type TabId = typeof tabs[number]['id'] | 'storedData' | 'admin';
 
 export default function App() {
   const [networkState, setNetworkState] = useState<NetworkStatusData | null>(null);
@@ -46,11 +48,19 @@ export default function App() {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [aiInitialTab, setAiInitialTab] = useState<'chat' | 'diagnose' | undefined>(undefined);
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
-  const [currentTab, setCurrentTab] = useState<'form' | 'dashboard' | 'map' | 'storedData' | 'admin' | 'profile'>('form');
+  const [currentTab, setCurrentTab] = useState<TabId>('form');
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
-  // Unified tab switching — Fix #7: only forward to iframe for tabs it owns.
-  const handleTabChange = (tabId: 'form' | 'dashboard' | 'map' | 'storedData' | 'admin' | 'profile') => {
+  // Ref to notify MapTab to invalidateSize
+  const mapInvalidateRef = useRef<(() => void) | null>(null);
+  const registerMapInvalidate = useCallback((fn: () => void) => {
+    mapInvalidateRef.current = fn;
+  }, []);
+
+  // Unified tab switching
+  const handleTabChange = useCallback((tabId: TabId) => {
     setCurrentTab(tabId);
+    setMobileDrawerOpen(false);
     if (!IFRAME_OWNED_TABS.includes(tabId as any)) return;
     const iframe = document.getElementById('app-iframe') as HTMLIFrameElement;
     if (iframe && iframe.contentWindow) {
@@ -68,15 +78,27 @@ export default function App() {
         }
       }
     }
-  };
+  }, []);
 
-  // Listen to cross-window requests, AI triggers, and rural data saver toggle events from legacy-nursery.html iframe
+  // Invalidate Leaflet map size when switching to map tab
+  useEffect(() => {
+    if (currentTab === 'map' && mapInvalidateRef.current) {
+      // Use requestAnimationFrame to ensure the container is visible and laid out
+      const raf = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          mapInvalidateRef.current?.();
+        });
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [currentTab]);
+
+  // Listen to cross-window requests, AI triggers, and rural data saver toggle events
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (!event.data) return;
 
       if (event.data.type === 'request-location') {
-        // Only respond when iframe is visible
         if (!IFRAME_OWNED_TABS.includes(currentTab as any)) return;
         const iframe = document.getElementById('app-iframe') as HTMLIFrameElement;
         if (iframe && iframe.contentWindow && geoState && geoState.coords) {
@@ -94,7 +116,7 @@ export default function App() {
       if (event.data.type === 'tab-changed') {
         const tab = event.data.tab;
         if (['form', 'dashboard', 'map', 'storedData', 'admin', 'profile'].includes(tab)) {
-          setCurrentTab(tab as any);
+          setCurrentTab(tab as TabId);
         }
       }
 
@@ -107,7 +129,6 @@ export default function App() {
       if (event.data.type === 'rural-data-saver-change') {
         const enabled = event.data.enabled;
         localStorage.setItem('rural_data_saver_active', enabled ? 'true' : 'false');
-        // Dispatch storage event so other React hooks/components (like MobileControlCenter) update instantly
         window.dispatchEvent(new StorageEvent('storage', {
           key: 'rural_data_saver_active',
           newValue: enabled ? 'true' : 'false'
@@ -118,22 +139,21 @@ export default function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [geoState]);
+  }, [geoState, currentTab]);
 
-  // Fix #14: Listen for app-navigate custom events (e.g. admin link from ProfilePage)
+  // Listen for app-navigate custom events
   useEffect(() => {
     const handler = (e: Event) => {
       const tab = (e as CustomEvent).detail;
       if (['form', 'dashboard', 'map', 'storedData', 'admin', 'profile'].includes(tab)) {
-        handleTabChange(tab);
+        handleTabChange(tab as TabId);
       }
     };
     window.addEventListener('app-navigate', handler);
     return () => window.removeEventListener('app-navigate', handler);
-  }, []);
+  }, [handleTabChange]);
 
-  // Fix #6: Only push GPS to iframe when the iframe is visible (owns the active tab).
-  // Sending to a hidden iframe wastes bandwidth on rural connections.
+  // Only push GPS to iframe when the iframe is visible
   useEffect(() => {
     if (geoState?.coords && IFRAME_OWNED_TABS.includes(currentTab as any)) {
       const iframe = document.getElementById('app-iframe') as HTMLIFrameElement;
@@ -152,32 +172,42 @@ export default function App() {
 
   const handlePlantationSubmit = (submission: PlantationSubmission) => {
     saveSubmission(submission);
-    // TODO: wire into the real sync queue once the Dexie/backend rework
-    // lands — see src/utils/submissionStore.ts for the current bridge.
   };
 
+  // Active tab label for drawer header
+  const activeTabDef = tabs.find(t => t.id === currentTab);
+  const activeTabLabel = activeTabDef?.label ?? '';
+
   return (
-    <div className="flex flex-col w-full h-screen overflow-hidden bg-slate-50 font-sans" style={{ height: '100vh' }}>
+    <div className="flex flex-col w-full h-[100dvh] overflow-hidden bg-slate-50 font-sans safe-area-top">
       <NetworkStatus onStateChange={setNetworkState} />
       <GeolocationIndicator onStateChange={setGeoState} />
       <WelcomeModal />
       <PWAInstaller />
       <SyncToast />
 
-      {/* Modern Top Header with Desktop Navigation */}
-      <header className="flex-shrink-0 bg-gradient-to-r from-emerald-800 to-teal-850 text-white shadow-md z-30 relative no-print">
-        <div className="max-w-7xl mx-auto px-4 h-14 md:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-emerald-700/50 rounded-xl border border-emerald-500/30 shadow-inner flex items-center justify-center">
-              <Sprout className="w-5 h-5 text-emerald-300 animate-pulse" />
+      {/* ======= TOP HEADER ======= */}
+      <header className="flex-shrink-0 bg-gradient-to-r from-emerald-800 to-teal-850 text-white shadow-md relative no-print" style={{ zIndex: 30 }}>
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-12 sm:h-14 md:h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            {/* Hamburger menu for mobile + tablet (below md) */}
+            <button
+              onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+              className="md:hidden flex-shrink-0 p-1.5 -ml-1 rounded-lg hover:bg-emerald-700/50 transition-colors cursor-pointer"
+              aria-label="মেনু খুলুন"
+            >
+              {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <div className="p-1 sm:p-1.5 bg-emerald-700/50 rounded-xl border border-emerald-500/30 shadow-inner flex items-center justify-center flex-shrink-0">
+              <Sprout className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-300 animate-pulse" />
             </div>
-            <div>
-              <h1 className="font-bold text-sm md:text-base leading-tight tracking-tight">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
-              <p className="text-[10px] text-emerald-200/90 hidden sm:block font-medium">কৃষি সম্প্রসারণ অধিদপ্তর (DAE) | মোবাইল ডাটা সার্ভিস</p>
+            <div className="min-w-0">
+              <h1 className="font-bold text-xs sm:text-sm md:text-base leading-tight tracking-tight truncate">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
+              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">কৃষি সম্প্রসারণ অধিদপ্তর (DAE) | মোবাইল ডাটা সার্ভিস</p>
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs */}
+          {/* Desktop Navigation Tabs — hidden below md */}
           <nav className="hidden md:flex items-center gap-2">
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -208,48 +238,86 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Stage */}
-      {/* Fix #1: min-h-0 is required so flex-1 children with absolute positioning (Leaflet) compute height correctly */}
+      {/* ======= MOBILE DRAWER OVERLAY (below md only) ======= */}
+      <AnimatePresence>
+        {mobileDrawerOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileDrawerOpen(false)}
+              className="md:hidden fixed inset-0 bg-black/40 z-40"
+            />
+            {/* Drawer sheet from top */}
+            <motion.div
+              initial={{ y: -10, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -10, opacity: 0 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white rounded-b-2xl shadow-2xl overflow-hidden"
+              style={{ top: '48px' }} /* align with header height on mobile */
+            >
+              <nav className="p-2">
+                {tabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = currentTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleTabChange(tab.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <span>{tab.label}</span>
+                      {isActive && (
+                        <div className="ml-auto w-2 h-2 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ======= MAIN CONTENT STAGE ======= */}
       <main className="flex-1 w-full relative overflow-hidden bg-white min-h-0">
-        {/* Native form replaces the legacy iframe form for the 'form' tab.
-            Nursery fields dropped, reporting fields match the official
-            17-column monthly proforma — see src/types/plantation.ts. */}
         <div
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'form' ? 'block' : 'none' }}
         >
           <PlantationForm geoState={geoState} onSubmit={handlePlantationSubmit} />
         </div>
 
-        {/* Native map tab — NDVI/EVI/Satellite/OSM layers, cloud pipeline
-            trigger, result overlay. See MapTab.tsx for the honest
-            demo-data labeling on the pipeline result (server.ts's
-            /api/gee-ndvi is still a procedural mock, not real GEE). */}
         <div
           className="absolute inset-0"
           style={{ display: currentTab === 'map' ? 'block' : 'none' }}
         >
-          <MapTab geoState={geoState} />
+          <MapTab geoState={geoState} onMapReady={registerMapInvalidate} />
         </div>
 
         <div
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'profile' ? 'block' : 'none' }}
         >
           <ProfilePage networkState={networkState} geoState={geoState} />
         </div>
 
-        {/* Native dashboard tab — was previously a desktop-only collapsed
-            floating widget; now a real page like the other 3 tabs. */}
         <div
-          className="absolute inset-0 overflow-y-auto"
+          className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'dashboard' ? 'block' : 'none' }}
         >
           <OfflinePlantationDashboard />
         </div>
 
-        {/* Legacy iframe still serves storedData / admin until those are
-            ported natively too. */}
+        {/* Legacy iframe for storedData / admin */}
         <iframe 
           id="app-iframe"
           src="legacy-nursery.html" 
@@ -261,13 +329,6 @@ export default function App() {
               const win = e.currentTarget.contentWindow;
               if (win) {
                 (win as any).VITE_GEE_PIPELINE_URL = import.meta.env.VITE_GEE_PIPELINE_URL;
-                // Only forward tab-sync to the iframe for tabs it still
-                // owns. Calling switchTab('form') or switchTab('map')
-                // here would make the (hidden) iframe run its own
-                // initMiniFormMap()/renderMap() — a second, invisible
-                // Leaflet instance doing its own GPS/tile requests for
-                // no visible purpose, now that those tabs are native.
-                // Only forward tab-sync for tabs the iframe owns
                 if (typeof (win as any).switchTab === 'function' && IFRAME_OWNED_TABS.includes(currentTab as any)) {
                   (win as any).switchTab(currentTab);
                 }
@@ -279,34 +340,43 @@ export default function App() {
         />
       </main>
 
-      {/* 4 tabs, all shown on both mobile bottom bar and desktop nav */}
-      <nav className="md:hidden flex-shrink-0 bg-white border-t border-slate-100/80 shadow-2xl flex items-center justify-around h-16 px-1 z-30 relative no-print pb-safe">
-        {tabs.filter((t) => t.mobile).map((tab) => {
+      {/* ======= MOBILE BOTTOM TAB BAR (below md only) ======= */}
+      <nav className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 shadow-[0_-2px_10px_rgba(0,0,0,0.08)] flex items-center justify-around relative no-print mobile-bottom-nav" style={{ zIndex: 30, height: '56px', minHeight: '56px' }}>
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className="flex flex-col items-center justify-center flex-1 py-1 transition active:scale-95 cursor-pointer relative"
+              className="flex flex-col items-center justify-center flex-1 py-1 transition active:scale-95 cursor-pointer relative -outline-offset-2 focus-visible:outline-2 focus-visible:outline-emerald-500"
+              aria-label={tab.label}
+              aria-current={isActive ? 'page' : undefined}
             >
-              <div className={`p-1.5 rounded-xl transition-colors duration-200 ${isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500'}`}>
+              <div className={`p-1 rounded-xl transition-colors duration-200 ${isActive ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
                 <Icon className="w-5 h-5" />
               </div>
-              <span className={`text-[10px] mt-0.5 font-semibold transition-colors duration-200 ${isActive ? 'text-emerald-700 font-bold' : 'text-slate-500'}`}>
+              <span className={`text-[10px] mt-0.5 font-semibold transition-colors duration-200 leading-tight ${isActive ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
                 {tab.label}
               </span>
+              {isActive && (
+                <motion.div 
+                  layoutId="mobileActiveIndicator"
+                  className="absolute -top-px left-1/4 right-1/4 h-0.5 bg-emerald-600 rounded-full"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
             </button>
           );
         })}
       </nav>
       
-      {/* Interactive AI Co-Pilot Floating FAB */}
-      <div className="fixed bottom-20 md:bottom-6 right-4 z-40 pointer-events-auto">
+      {/* ======= AI Co-Pilot Floating FAB ======= */}
+      <div className="fixed bottom-[72px] md:bottom-6 right-3 md:right-4 pointer-events-auto" style={{ zIndex: 40 }}>
         <motion.button
           id="aiCoPilotFAB"
           onClick={() => setIsAiOpen(!isAiOpen)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-full shadow-2xl border transition-all text-xs font-extrabold cursor-pointer ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full shadow-2xl border transition-all text-[10px] sm:text-xs font-extrabold cursor-pointer ${
             isAiOpen 
               ? 'bg-slate-900 border-slate-800 text-white hover:bg-slate-850' 
               : 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700 shadow-emerald-500/20'
@@ -316,40 +386,37 @@ export default function App() {
           initial={{ scale: 0.9 }}
           animate={{ scale: 1 }}
         >
-          <div className="relative flex h-2.5 w-2.5">
+          <div className="relative flex h-2.5 w-2.5 flex-shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
           </div>
-
-          <Sparkles className="w-4 h-4 shrink-0" />
-          
-          <span className="font-sans">
-            {isAiOpen ? 'সহকারী বন্ধ করুন' : 'এআই সহকারী কো-পাইলট'}
+          <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+          <span className="font-sans hidden xs:inline">
+            {isAiOpen ? 'সহকারী বন্ধ' : 'AI কো-পাইলট'}
           </span>
         </motion.button>
       </div>
 
-      {/* AI Assistant Modal Backdrop and Panel */}
+      {/* ======= AI Assistant Modal ======= */}
       <AnimatePresence>
         {isAiOpen && (
           <>
-            {/* Dark blur overlay */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAiOpen(false)}
-              className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-45"
+              className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs"
+              style={{ zIndex: 45 }}
             />
-
-            {/* AI Assistant container sheet panel */}
             <motion.div
               id="aiAssistantPanel"
               initial={{ opacity: 0, x: 50, y: 50, scale: 0.95 }}
               animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
               exit={{ opacity: 0, x: 50, y: 50, scale: 0.95 }}
               transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed bottom-36 md:bottom-24 right-4 z-50 w-[92vw] sm:w-[420px] h-[65vh] max-h-[550px] shadow-2xl rounded-2xl overflow-hidden"
+              className="fixed bottom-[88px] md:bottom-24 right-2 sm:right-4 w-[95vw] sm:w-[420px] h-[60vh] sm:h-[65vh] max-h-[500px] sm:max-h-[550px] shadow-2xl rounded-2xl overflow-hidden"
+              style={{ zIndex: 50 }}
             >
               <AIAssistant 
                 onClose={() => setIsAiOpen(false)} 

@@ -1,0 +1,107 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'android/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'capacitor.config.ts'
+      - 'tsconfig.json'
+      - 'tailwind.config.*'
+      - 'postcss.config.*'
+      - '.github/workflows/build-android.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets (Vite)
+        run: npm run build:web
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Fix gradle wrapper permissions
+        run: chmod +x android/gradlew
+
+      - name: Ensure gradle-wrapper.jar is valid
+        run: |
+          JAR=android/gradle/wrapper/gradle-wrapper.jar
+          MIN_SIZE=60000
+          if [ -f "$JAR" ]; then
+            SIZE=$(wc -c < "$JAR")
+            if [ "$SIZE" -gt "$MIN_SIZE" ]; then
+              echo "gradle-wrapper.jar is valid ($SIZE bytes)"
+            else
+              echo "gradle-wrapper.jar is too small ($SIZE bytes), regenerating..."
+              cd android && gradle wrapper --gradle-version 8.14.3
+            fi
+          else
+            echo "gradle-wrapper.jar missing, regenerating..."
+            cd android && gradle wrapper --gradle-version 8.14.3
+          fi
+
+      - name: Run Capacitor sync
+        run: npx cap sync android
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Build Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Build Release AAB
+        working-directory: android
+        run: ./gradlew bundleRelease
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Upload Release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-bundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30

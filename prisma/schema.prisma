@@ -1,0 +1,125 @@
+// =============================================================================
+// Plantation Tracker — Prisma Schema
+// =============================================================================
+// Relational mapping of the 17-column official monthly proforma
+// "০৫ বছরে ২৫ কোটি বৃক্ষ রোপণ কর্মসূচি"
+//
+// Tables:
+//   Submission   — one per field-visit / form submit (parent)
+//   Seedling     — repeatable species rows per submission (child 1:N)
+//   Photo        — geo-verified evidence trail (child 1:N)
+//
+// For production, change the provider to "postgresql" and update
+// DATABASE_URL in .env — the schema is provider-agnostic.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Main Submission (17-column proforma, one row per field visit) ──────────
+
+model Submission {
+  id        String   @id @default(cuid())
+  clientUid String   @unique
+
+  entryMode String   @default("dae_officer")
+
+  // Location — report columns 2–6
+  region   String   @default("")
+  district String   @default("")
+  upazila  String   @default("")
+  union    String   @default("")
+  blockId  String?
+  blockName String?
+  village  String   @default("")
+
+  // Report column 9
+  plantationDate String
+
+  // Report column 10 — GPS
+  latitude  Float    @default(0)
+  longitude Float    @default(0)
+  accuracy  Float    @default(0)
+
+  // Report columns 11–12 — caretaker
+  caretakerName    String @default("")
+  caretakerMobile  String @default("")
+
+  // Report columns 13–14 — SAAO
+  saaoId     String?
+  saaoName   String @default("")
+  saaoMobile String @default("")
+
+  // Report columns 15–16 — monitoring officer
+  monitoringOfficerId     String?
+  monitoringOfficerName   String @default("")
+  monitoringOfficerMobile String @default("")
+
+  // Report column 17
+  remarks String?
+
+  // App-only extras
+  areaSqMeters  Float?
+  spacingFlag   Boolean @default(false)
+
+  nurserySourceId       String?
+  nurserySourceName     String?
+  nurserySourceLatitude  Float?
+  nurserySourceLongitude Float?
+
+  synced   Boolean  @default(true)
+  syncedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seedlings Seedling[]
+  photos    Photo[]
+
+  @@index([district])
+  @@index([upazila])
+  @@index([synced])
+  @@index([createdAt])
+  @@index([plantationDate])
+}
+
+// ─── Seedling entries (report columns 7–8, repeatable per submission) ──────
+
+model Seedling {
+  id          String @id @default(cuid())
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  plantTypeId String?
+  speciesId   String?
+  speciesName String
+  count       Int    @default(0)
+
+  @@index([submissionId])
+  @@index([speciesName])
+}
+
+// ─── Photo evidence trail ──────────────────────────────────────────────────
+
+model Photo {
+  id                      String  @id @default(cuid())
+  submissionId            String
+  submission              Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  stage                   String  @default("planting")
+  url                     String
+  sha256                  String  @default("")
+  capturedAt              String
+  latitude                Float   @default(0)
+  longitude               Float   @default(0)
+  distanceFromOriginMeters Float?
+
+  @@index([submissionId])
+  @@index([stage])
+}
