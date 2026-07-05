@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import NetworkStatus, { NetworkStatusData } from './components/NetworkStatus';
+import { useOfflineQueue } from './hooks/useOfflineQueue';
 import GeolocationIndicator, { GeoState } from './components/GeolocationIndicator';
 import WelcomeModal from './components/WelcomeModal';
 import PWAInstaller from './components/PWAInstaller';
@@ -55,6 +56,7 @@ export default function App() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [rewardToast, setRewardToast] = useState<{ xp: number; tokens: number; breakdown: { label: string; xp: number; tokens: number }[] } | null>(null);
   const { addXp, addTokens } = useAuth();
+  const offlineQueue = useOfflineQueue();
 
   // Ref to notify MapTab to invalidateSize
   const mapInvalidateRef = useRef<(() => void) | null>(null);
@@ -376,7 +378,7 @@ export default function App() {
           className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'dashboard' ? 'block' : 'none' }}
         >
-          <OfflinePlantationDashboard />
+          <OfflinePlantationDashboard syncState={offlineQueue} />
         </div>
 
         {/* Legacy iframe for storedData / admin */}

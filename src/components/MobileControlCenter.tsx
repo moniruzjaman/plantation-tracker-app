@@ -25,12 +25,12 @@ import {
 
 import { GeoState } from './GeolocationIndicator';
 import { NetworkStatusData } from './NetworkStatus';
-import { Submission } from './OfflinePlantationDashboard';
+import type { PlantationSubmission } from '../types/plantation';
 
 interface MobileControlCenterProps {
   networkState: NetworkStatusData | null;
   geoState: GeoState | null;
-  submissions: Submission[];
+  submissions: PlantationSubmission[];
   userEmail: string;
 }
 
@@ -85,24 +85,19 @@ export default function MobileControlCenter({ networkState, geoState, submission
     const districtMap: { [key: string]: number } = {};
 
     submissions.forEach(s => {
-      const countCategory = (list?: any[]) => {
-        let sum = 0;
-        if (list && Array.isArray(list)) {
-          list.forEach(item => {
-            sum += (parseInt(item.count) || 0) + (parseInt(item.graftingCount) || 0);
-          });
-        }
-        return sum;
-      };
-
-      const f = countCategory(s.fruitSeedlings);
-      const fo = countCategory(s.forestSeedlings);
-      const m = countCategory(s.medicinalSeedlings);
-
+      let f = 0, fo = 0, m = 0;
+      s.seedlings.forEach(se => {
+        const c = se.count || 0;
+        tSeedlings += c;
+        // Simple category heuristic by name
+        const n = se.speciesName || '';
+        if (['আম', 'কাঁঠাল', 'জাম', 'লিচু', 'পেয়ারা', 'নারকেল', 'সুপারি'].some(k => n.includes(k))) f += c;
+        else if (['নিম', 'অর্জুন', 'আমলকী', 'হরিতকী', 'বহেরা'].some(k => n.includes(k))) m += c;
+        else fo += c;
+      });
       fCount += f;
       foCount += fo;
       mCount += m;
-      tSeedlings += (f + fo + m);
 
       if (s.district) {
         districtMap[s.district] = (districtMap[s.district] || 0) + 1;
@@ -155,28 +150,19 @@ export default function MobileControlCenter({ networkState, geoState, submission
   };
 
   const exportToCSV = () => {
-    const headers = ['Date', 'District', 'Upazila', 'Region', 'Nursery', 'Fruit Seedlings', 'Forest Seedlings', 'Medicinal Seedlings'];
-    const rows = submissions.map(s => {
-      const countCategory = (list?: any[]) => {
-        let sum = 0;
-        if (list && Array.isArray(list)) {
-          list.forEach(item => {
-            sum += (parseInt(item.count) || 0) + (parseInt(item.graftingCount) || 0);
-          });
-        }
-        return sum;
-      };
-      return [
-        s.plantingDate || s.submittedAt || new Date().toISOString().split('T')[0],
+    const headers = ['Date', 'District', 'Upazila', 'Region', 'Village', 'Species', 'Count', 'Mode', 'GPS'];
+    const rows = submissions.map(s => [
+        s.plantationDate || s.timestamp || new Date().toISOString().split('T')[0],
         s.district || '',
         s.upazila || '',
         s.region || '',
-        s.nurseryName || '',
-        countCategory(s.fruitSeedlings),
-        countCategory(s.forestSeedlings),
-        countCategory(s.medicinalSeedlings)
-      ].join(',');
-    });
+        s.village || '',
+        s.seedlings.map(se => se.speciesName).join('; '),
+        s.seedlings.reduce((sum, se) => sum + (se.count || 0), 0),
+        s.entryMode || '',
+        s.latitude && s.longitude ? `${s.latitude},${s.longitude}` : ''
+      ].join(',')
+    );
     
     const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
