@@ -109,6 +109,23 @@ export function getSubmissionReward(sub: PlantationSubmission): SubmissionReward
     add('মন্তব্য', 1, 0);
   }
 
+  // VM0047 compliance rewards
+  if (sub.treeSerial) {
+    add('ট্রি সিরিয়াল আইডি', 5, 2);
+  }
+  if (sub.photos.length >= 3) {
+    const types = new Set(sub.photos.map(p => p.photoType).filter(Boolean));
+    if (types.has('qr_closeup') && types.has('full_tree') && types.has('context')) {
+      add('VM0047 ৩-ফটো প্রমাণ', 10, 5);
+    }
+  }
+  if (sub.trackingMethod === 'area' && sub.geoPolygon) {
+    add('এরিয়া-বেসড ট্র্যাকিং', 8, 3);
+  }
+  if (sub.modellingUnitId) {
+    add('মডেলিং ইউনিট', 3, 1);
+  }
+
   return { xp, tokens, breakdown };
 }
 
