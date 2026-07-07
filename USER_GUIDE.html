@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<title>বৃক্ষরোপণ মনিটরিং অ্যাপ — ব্যবহারকারী গাইড</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@300;400;500;600;700;800&family=Noto+Serif+Bengali:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+@page {
+    size: 720px 1020px;
+    margin: 0;
+}
+:root {
+    --c-bg: #ffffff;
+    --c-text: #1e293b;
+    --c-muted: #64748b;
+    --c-accent: #047857;
+    --c-accent-light: #d1fae5;
+    --c-sky: #0369a1;
+    --c-sky-light: #e0f2fe;
+    --c-amber: #b45309;
+    --c-amber-light: #fef3c7;
+    --c-border: #e2e8f0;
+}
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 720px;
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: 'Noto Sans Bengali', sans-serif;
+    font-size: 13px;
+    line-height: 1.7;
+}
+@media screen {
+    html {
+        height: auto;
+        display: flex;
+        justify-content: center;
+        background: #e2e8f0;
+    }
+    body {
+        transform-origin: top center;
+        margin: 20px auto;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    }
+}
+
+/* ─── Cover ─── */
+.cover {
+    width: 720px;
+    height: 1020px;
+    box-sizing: border-box;
+    break-after: page;
+    overflow: hidden;
+    background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #065f46 100%);
+    color: #ffffff;
+    padding: 80px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+}
+.cover::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+}
+.cover::after {
+    content: '';
+    position: absolute;
+    bottom: -150px;
+    left: -150px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.03);
+}
+.cover-top {
+    position: relative;
+    z-index: 1;
+}
+.cover-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 32px;
+}
+.cover-title {
+    font-family: 'Noto Serif Bengali', serif;
+    font-size: 42px;
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0 0 20px 0;
+}
+.cover-subtitle {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.9);
+    max-width: 480px;
+    margin: 0 0 40px 0;
+}
+.cover-meta {
+    display: flex;
+    gap: 32px;
+    font-size: 12px;
+}
+.cover-meta-item {
+    display: flex;
+    flex-direction: column;
+}
+.cover-meta-label {
+    color: rgba(255,255,255,0.6);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+.cover-meta-value {
+    font-weight: 600;
+    font-size: 14px;
+}
+.cover-bottom {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 24px;
+}
+.cover-org {
+    font-size: 13px;
+    font-weight: 600;
+}
+.cover-org-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+    margin-top: 4px;
+}
+.cover-version {
+    font-family: monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+    background: rgba(0,0,0,0.2);
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+/* ─── Main content ─── */
+.main-content {
+    padding: 50px 55px 40px 55px;
+}
+
+/* ─── TOC ─── */
+.toc {
+    break-after: page;
+    padding: 50px 55px;
+}
+.toc-title {
+    font-family: 'Noto Serif Bengali', serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--c-accent);
+    margin: 0 0 24px 0;
+    padding-bottom: 12px;
+    border-bottom: 3px solid var(--c-accent-light);
+}
+.toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: toc;
+}
+.toc-item {
+    counter-increment: toc;
+    display: flex;
+    align-items: baseline;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--c-border);
+    font-size: 13px;
+}
+.toc-item::before {
+    content: counter(toc, decimal);
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    background: var(--c-accent-light);
+    color: var(--c-accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    margin-right: 14px;
+}
+.toc-text {
+    flex: 1;
+    color: var(--c-text);
+    font-weight: 500;
+}
+
+/* ─── Chapter ─── */
+.chapter {
+    margin-top: 28px;
+    break-inside: avoid-page;
+}
+.chapter:first-child {
+    margin-top: 0;
+}
+.chapter-header {
+    break-after: avoid;
+    margin-bottom: 16px;
+}
+.chapter-number {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--c-accent);
+    background: var(--c-accent-light);
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+.chapter-title {
+    font-family: 'Noto Serif Bengali', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--c-text);
+    margin: 0;
+    line-height: 1.3;
+}
+.chapter-divider {
+    height: 2px;
+    background: linear-gradient(to right, var(--c-accent), transparent);
+    margin-top: 8px;
+}
+
+/* ─── Section ─── */
+.section {
+    margin-top: 20px;
+}
+.section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-accent);
+    margin: 0 0 8px 0;
+    break-after: avoid;
+}
+.section-body {
+    break-inside: auto;
+}
+p {
+    margin: 0 0 10px 0;
+    text-align: justify;
+    hyphens: auto;
+}
+
+/* ─── Cards ─── */
+.card {
+    break-inside: avoid;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    border-left: 4px solid;
+}
+.card-emerald {
+    background: #ecfdf5;
+    border-color: var(--c-accent);
+}
+.card-sky {
+    background: var(--c-sky-light);
+    border-color: var(--c-sky);
+}
+.card-amber {
+    background: var(--c-amber-light);
+    border-color: var(--c-amber);
+}
+.card-title {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.card-emerald .card-title { color: #065f46; }
+.card-sky .card-title { color: #075985; }
+.card-amber .card-title { color: #92400e; }
+
+/* ─── Tables ─── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 12px;
+    break-inside: avoid;
+}
+th {
+    background: var(--c-accent);
+    color: white;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--c-border);
+    vertical-align: top;
+}
+tr:nth-child(even) td {
+    background: #f8fafc;
+}
+td:first-child {
+    font-weight: 500;
+}
+
+/* ─── Code ─── */
+code {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    background: #f1f5f9;
+    color: #be185d;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-x: auto;
+    break-inside: avoid;
+    margin: 12px 0;
+}
+pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+/* ─── Lists ─── */
+ul, ol {
+    margin: 8px 0;
+    padding-left: 22px;
+}
+li {
+    margin-bottom: 4px;
+}
+
+/* ─── Badge ─── */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+.badge-new {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+.badge-free {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+/* ─── Ending ─── */
+.ending {
+    width: 720px;
+    height: 1020px;
+    box-sizing: border-box;
+    break-before: page;
+    overflow: hidden;
+    background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+    color: white;
+    padding: 80px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+}
+.ending-title {
+    font-family: 'Noto Serif Bengali', serif;
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+}
+.ending-text {
+    font-size: 14px;
+    color: rgba(255,255,255,0.85);
+    max-width: 440px;
+    line-height: 1.7;
+    margin: 0 0 32px 0;
+}
+.ending-meta {
+    font-family: monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 20px;
+    width: 100%;
+    max-width: 440px;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ COVER ═══ -->
+<div class="cover">
+    <div class="cover-top">
+        <span class="cover-badge">ব্যবহারকারী গাইড · USER GUIDE</span>
+        <h1 class="cover-title">বৃক্ষরোপণ মনিটরিং অ্যাপ</h1>
+        <p class="cover-subtitle">"০৫ বছরে ২৫ কোটি বৃক্ষ রোপণ কর্মসূচি" — মোবাইল ডাটা সার্ভিস। প্রতিটি ট্যাব ও ফিচারের বিস্তারিত নির্দেশিকা — DAE ফিল্ড অফিসার, SAAO, মনিটরিং ক্যাডার ও নাগরিক ব্যবহারকারীদের জন্য।</p>
+        <div class="cover-meta">
+            <div class="cover-meta-item">
+                <span class="cover-meta-label">সংস্করণ</span>
+                <span class="cover-meta-value">২.১.০</span>
+            </div>
+            <div class="cover-meta-item">
+                <span class="cover-meta-label">আপডেট</span>
+                <span class="cover-meta-value">জুলাই ২০২৬</span>
+            </div>
+            <div class="cover-meta-item">
+                <span class="cover-meta-label">পৃষ্ঠা</span>
+                <span class="cover-meta-value">১০ অধ্যায়</span>
+            </div>
+        </div>
+    </div>
+    <div class="cover-bottom">
+        <div>
+            <div class="cover-org">বাংলাদেশ কৃষি সম্প্রসারণ অধিদপ্তর</div>
+            <div class="cover-org-sub">Department of Agricultural Extension (DAE)</div>
+        </div>
+        <div class="cover-version">v2.1.0 · 2026.07</div>
+    </div>
+</div>
+
+<!-- ═══ TOC ═══ -->
+<div class="toc">
+    <h2 class="toc-title">সূচিপত্র</h2>
+    <ol class="toc-list">
+        <li class="toc-item"><span class="toc-text">প্রথম ইনস্টল ও অ্যাকাউন্ট সেটআপ</span></li>
+        <li class="toc-item"><span class="toc-text">ফর্ম ট্যাব — বৃক্ষরোপণ তথ্য সংগ্রহ</span></li>
+        <li class="toc-item"><span class="toc-text">ম্যাপ ট্যাব — NDVI সিমুলেটর ও স্যাটেলাইট ট্র্যাকিং</span></li>
+        <li class="toc-item"><span class="toc-text">প্রোফাইল ট্যাব — ব্যবহারকারী পরিচয় ও টোকেন</span></li>
+        <li class="toc-item"><span class="toc-text">ড্যাশবোর্ড ট্যাব — পরিসংখ্যান, স্বাস্থ্য ও পুরস্কার</span></li>
+        <li class="toc-item"><span class="toc-text">AI কো-পাইলট — চ্যাট ও রোগ নির্ণয়</span></li>
+        <li class="toc-item"><span class="toc-text">অফলাইন মোড ও সিঙ্ক</span></li>
+        <li class="toc-item"><span class="toc-text">অ্যাডমিন গাইড — সিড ডেটা ও ইউজার ম্যানেজমেন্ট</span></li>
+        <li class="toc-item"><span class="toc-text">টোকেন ও XP পুরস্কার সিস্টেম</span></li>
+        <li class="toc-item"><span class="toc-text">সমস্যা সমাধান (Troubleshooting)</span></li>
+    </ol>
+</div>
+
+<!-- ═══ MAIN CONTENT ═══ -->
+<div class="main-content">
+
+<!-- Chapter 1 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০১</span>
+        <h2 class="chapter-title">প্রথম ইনস্টল ও অ্যাকাউন্ট সেটআপ</h2>
+        <div class="chapter-divider"></div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">১.১ অ্যাপ ইনস্টল</h3>
+        <div class="section-body">
+            <p>অ্যাপটি একটি PWA (Progressive Web App) এবং Android অ্যাপ হিসেবে উপলব্ধ। ব্রাউজার থেকে সরাসরি ব্যবহার করা যায়, অথবা হোম স্ক্রিনে ইনস্টল করা যায়। প্রথমবার খোলার সময় অ্যাপটি একটি ওয়েলকাম মডাল দেখাবে যা অ্যাপের উদ্দেশ্য ও মূল ফিচারগুলো পরিচয় করিয়ে দেয়। ওয়েলকাম স্ক্রিন বন্ধ করার পর আপনি সরাসরি ফর্ম ট্যাবে চলে যাবেন, যেখানে বৃক্ষরোপণের তথ্য সংগ্রহ শুরু করা যায়। অ্যাপটি অফলাইন-ফার্স্ট, তাই ইন্টারনেট সংযোগ ছাড়াই ফর্ম পূরণ ও সংরক্ষণ করা যায় — সংযোগ ফিরলে স্বয়ংক্রিয়ভাবে সিঙ্ক হয়।</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">১.২ ইমেল ভিত্তিক অটো-বুটস্ট্র্যাপ <span class="badge badge-new">নতুন</span></h3>
+        <div class="section-body">
+            <p>অ্যাপ ইনস্টল হওয়ার পর প্রথমবার, এটি সার্ভারের <code>seed/admins.json</code> allow-list ফেচ করে। যদি আপনার ইমেল allow-list-এ থাকে (অর্থাৎ আপনি অ্যাডমিন, ক্যাডার, বা SAAO হিসেবে পূর্ব-নির্ধারিত), তাহলে অ্যাপ স্বয়ংক্রিয়ভাবে আপনার প্রোফাইল তৈরি করবে — নাম, মোবাইল, পদবি, জেলা, ও উপজেলা allow-list থেকে পূর্ব-পূরণ করা হবে। এই ক্ষেত্রে কোনো ম্যানুয়াল ফর্ম পূরণের প্রয়োজন নেই, এবং আপনি সাথে সাথে অ্যাপের সকল ফিচার এক্সপ্লোর করতে পারবেন।</p>
+            <div class="card card-emerald">
+                <div class="card-title">💡 বিল্ট-ইন ইমেল</div>
+                <p style="margin:0">allow-list-এ প্রথম <code>admin</code> রোলের ইমেলটি "বিল্ট-ইন" ইমেল হিসেবে কাজ করে। প্রথম ইনস্টলে যদি কোনো ইমেল মনে না থাকে, অ্যাপ এই বিল্ট-ইন ইমেল ব্যবহার করে অ্যাপ এক্সপ্লোর করার অনুমতি দেয় — কিন্তু ফর্ম জমা দেওয়ার আগে নাম ও মোবাইল পূরণ বাধ্যতামূলক।</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">১.৩ নাগরিক ব্যবহারকারী রেজিস্ট্রেশন</h3>
+        <div class="section-body">
+            <p>যদি আপনার ইমেল allow-list-ে না থাকে, তাহলে আপনি নাগরিক (citizen) হিসেবে রেজিস্টার করবেন। এই ক্ষেত্রে নাম ও মোবাইল বাধ্যতামূলক, এবং ঐচ্ছিক ফিল্ডগুলো পূরণ করলে আপনার টোকেন বৃদ্ধি পায়।</p>
+            <table>
+                <thead><tr><th>ফিল্ড</th><th>বাধ্যতামূলক</th><th>টোকেন পুরস্কার</th></tr></thead>
+                <tbody>
+                    <tr><td>নাম</td><td>হ্যাঁ</td><td>+৫</td></tr>
+                    <tr><td>মোবাইল নম্বর</td><td>হ্যাঁ</td><td>+৫</td></tr>
+                    <tr><td>NID (জাতীয় পরিচয়পত্র)</td><td>ঐচ্ছিক</td><td>+১০</td></tr>
+                    <tr><td>Job ID (অফিসার রোলের জন্য)</td><td>ঐচ্ছিক</td><td>+১০</td></tr>
+                    <tr><td>পদবি</td><td>ঐচ্ছিক</td><td>+৫</td></tr>
+                    <tr><td>জেলা</td><td>ঐচ্ছিক</td><td>+৩</td></tr>
+                    <tr><td>উপজেলা</td><td>ঐচ্ছিক</td><td>+২</td></tr>
+                    <tr><td><b>সম্পূর্ণতা বোনাস</b> (NID + JobID)</td><td>—</td><td><b>+২৫</b> (এককালীন)</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">১.৪ রোল হায়ারার্কি</h3>
+        <div class="section-body">
+            <table>
+                <thead><tr><th>রোল</th><th>ক্লিয়ারেন্স</th><th>অনুমতি</th></tr></thead>
+                <tbody>
+                    <tr><td>নাগরিক (Citizen)</td><td>০</td><td>নিজের সাবমিশন জমা, ম্যাপ দেখা, প্রোফাইল ম্যানেজ</td></tr>
+                    <tr><td>ফিল্ড অফিসার (SAAO)</td><td>১</td><td>নিজের ব্লকের সাবমিশন দেখা, ফর্ম পূরণ</td></tr>
+                    <tr><td>ক্যাডার (UAO/AEO/AAO)</td><td>১</td><td>নিজের উপজেলার সকল সাবমিশন দেখা, হেলথ ট্যাব</td></tr>
+                    <tr><td>জেলা প্রশাসক</td><td>২</td><td>জেলার সকল ডেটা ও ইউজার দেখা</td></tr>
+                    <tr><td>জাতীয় পরিচালক</td><td>৩</td><td>পূর্ণ সিস্টেম অ্যাক্সেস, সিড সিঙ্ক, ইউজার ম্যানেজমেন্ট</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Chapter 2 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০২</span>
+        <h2 class="chapter-title">ফর্ম ট্যাব — বৃক্ষরোপণ তথ্য সংগ্রহ</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>ফর্ম ট্যাব হলো অ্যাপের প্রধান ডাটা এন্ট্রি পয়েন্ট। এখানে একটি সাইট ভিজিটে রোপণ করা প্রতিটি চারাগাছের তথ্য ১৭-কলাম সরকারি প্রোফর্মা অনুযায়ী সংগ্রহ করা হয়। ফর্মটি অফলাইনে পূরণ করা যায় এবং ইন্টারনেট সংযোগ ফিরলে স্বয়ংক্রিয়ভাবে সার্ভারে সিঙ্ক হয়।</p>
+
+    <div class="section">
+        <h3 class="section-title">২.১ এন্ট্রি মোড নির্বাচন</h3>
+        <p>ফর্মের শীর্ষে দুটি বাটন: <b>DAE অফিসার</b> এবং <b>নাগরিক</b>। আপনার প্রোফাইল রোল অনুযায়ী অ্যাপ স্বয়ংক্রিয়ভাবে সঠিক মোড নির্বাচন করে। DAE অফিসার মোডে SAAO ও মনিটরিং অফিসার ডিরেক্টরি লুকআপ সক্রিয় থাকে; নাগরিক মোডে এই ফিল্ডগুলো ম্যানুয়াল টেক্সট ইনপুট হিসেবে থাকে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.২ লোকেশন ক্যাসকেড</h3>
+        <p>একটি ক্যাসকেডিং ড্রপডাউন সিস্টেমে অঞ্চল → জেলা → উপজেলা → ইউনিয়ন → ব্লক → গ্রাম নির্বাচন করতে হয়। প্রতিটি স্তরের নির্বাচন পরবর্তী স্তরের অপশন ফিল্টার করে। ইউনিয়ন ও ব্লক ফিল্ডে EditableCombobox ব্যবহার করা হয়েছে — অর্থাৎ আপনি টাইপ করে সাজেশন থেকে বাছাই করতে পারেন, অথবা নতুন নাম টাইপ করতে পারেন (যা পেন্ডিং রিভিউ হিসেবে সংরক্ষিত হয়)।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.৩ GPS কো-অর্ডিনেট</h3>
+        <p><b>রোপণ GPS</b> বাটন চাপলে ডিভাইসের বর্তমান লোকেশন স্বয়ংক্রিয়ভাবে ফর্মে পূরণ হয়। স্যাটেলাইট সংকেত গ্রহণে কয়েক সেকেন্ড সময় লাগতে পারে, বিশেষত ভবনের ভেতরে থাকলে। সঠিক ফলাফলের জন্য খোলা আকাশের নিচে দাঁড়িয়ে বাটন চাপুন। সাথে সাথে Nominatim রিভার্স-জিওকোডিং ব্যবহার করে গ্রাম/ইউনিয়ন/জেলা স্বয়ংক্রিয়ভাবে পূরণের চেষ্টা করা হয়।</p>
+        <div class="card card-amber">
+            <div class="card-title">⚠ ভেরিফিকেশন GPS</div>
+            <p style="margin:0"><b>ভেরিফিকেশন GPS</b> হলো একটি আলাদা পয়েন্ট যা মনিটরিং অফিসাররা রেকর্ড করেন। এটি রোপণ লোকেশন থেকে কত দূরে তা স্বয়ংক্রিয়ভাবে গণনা করা হয় — ১৫ মিটারের বেশি হলে একটি অ্যাম্বার ফ্ল্যাগ দেখানো হয়।</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.৪ চারাগাছের প্রজাতি ও সংখ্যা</h3>
+        <p>প্রতিটি প্রজাতির জন্য একটি রিপিটেবল রো যোগ করা যায়। প্রতিটি রোতে: উদ্ভিদের ধরন (ফলদ/বনজ/ঔষধি), প্রজাতির নাম (ড্রপডাউন বা "+ new entry"), এবং সংখ্যা। যদি এলাকা (বর্গমিটার) পূরণ করা থাকে, অ্যাপ DAE-র স্ট্যান্ডার্ড প্লান্টিং ডিস্ট্যান্স নর্মের সাথে তুলনা করে একটি <code>spacingFlag</code> সফট-ফ্ল্যাগ দেখায় — কিন্তু কাউন্ট স্বয়ংক্রিয়ভাবে পরিবর্তন করা হয় না, কারণ বাস্তব প্লান্টেশন (রাস্তার ধার, বাঁধ, বাড়ির উঠান) সবসময় গ্রিডে ফেলে না।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.৫ ফটো প্রমাণ</h3>
+        <p>প্রতিটি সাবমিশনের সাথে ফটো প্রমাণ যোগ করা যায়। ফটো ক্লায়েন্ট-সাইডে কম্প্রেস করা হয় (~1280px, JPEG 0.65–0.7 কোয়ালিটি, ~80–150KB প্রতি ফটো)। প্রতিটি ফটোর সাথে GPS কো-অর্ডিনেট ও মূল পয়েন্ট থেকে দূরত্ব রেকর্ড করা হয়। একটি SHA-256 হ্যাশ ট্যাম্পার-প্রুফিং নিশ্চিত করে — ফটো পরে অদলবদল করা হলে হ্যাশ পরিবর্তিত হবে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.৬ SAAO ও মনিটরিং অফিসার</h3>
+        <p>DAE অফিসার মোডে, যদি SAAO ডিরেক্টরি লোড থাকে, তাহলে একটি সার্চ-স্টাইল পিকার থেকে SAAO বাছাই করা যায় — নাম ও মোবাইল স্বয়ংক্রিয়ভাবে পূরণ হয়। মনিটরিং অফিসার নির্বাচন উপজেলা-স্কোপড ড্রপডাউন থেকে (UAO + 2×AEO + AAO)। ডিরেক্টরি লোড না থাকলে ম্যানুয়াল টেক্সট ইনপুট ফলব্যাক কাজ করে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">২.৭ জমা দেওয়া</h3>
+        <p>সাবমিট বাটন ততক্ষণ পর্যন্ত ডিসেবল থাকে যতক্ষণ না <code>village</code>, <code>upazila</code>, এবং অন্তত একটি চারা রো পূরণ করা হয়। জমা দেওয়ার পর একটি রিওয়ার্ড টোস্ট দেখানো হয় — XP ও গ্রিন টোকেন সাবমিশনের ডেটা সমৃদ্ধি অনুযায়ী প্রদান করা হয়।</p>
+    </div>
+</div>
+
+<!-- Chapter 3 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৩</span>
+        <h2 class="chapter-title">ম্যাপ ট্যাব — NDVI সিমুলেটর ও স্যাটেলাইট ট্র্যাকিং</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>ম্যাপ ট্যাব একটি ইন্টারেক্টিভ Leaflet ম্যাপ যা NDVI স্যাটেলাইট ইমেজারি, স্যাটেলাইট ভিউ, ও OpenStreetMap লেয়ার স্যুইচ করতে দেয়। এখানে ৩৬টি সিড প্লান্টেশন সাইট সবুজ সার্কেল মার্কার হিসেবে দেখানো হয় — প্রতিটির উপর হোভার করলে প্রজাতি ও সংখ্যা টুলটিপ দেখায়, ক্লিক করলে সম্পূর্ণ বিস্তারিত পপআপ খোলে।</p>
+
+    <div class="section">
+        <h3 class="section-title">৩.১ লেয়ার সুইচার</h3>
+        <p>ম্যাপের উপর-বাম কোণায় একটি পিল-আকৃতির লেয়ার সুইচার: NDVI, EVI, স্যাটেলাইট, ও মানচিত্র। NDVI ও EVI লেয়ার NASA GIBS থেকে আসে (MODIS Terra 8-day composite, ~250m resolution, প্রতি ৮ দিনে আপডেট)। স্যাটেলাইট লেয়ার Esri World Imagery ব্যবহার করে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৩.২ NDVI সিমুলেটর প্যানেল</h3>
+        <p>নিচ-বাম কোণায় "NDVI সিমুলেটর" বাটন চাপলে একটি সাইড প্যানেল খোলে। এই প্যানেলে বছর নির্বাচন (২০২৬ চারা → ২০৩১ পরিপক্ক), গড় NDVI সূচক, ক্যানোপি স্টেজ, প্রাক্কলিত কার্বন শোষণ, কার্বন অফসেট মাত্রা, GEE ক্লাউড ব্যাজ, Sentinel-2 ডেটাসেট কার্ড, ব্যান্ড কম্বিনেশন সিলেক্টর, ক্লাউড ফিল্টার স্লাইডার, GEE কোড এডিটর, লাইভ প্ল্যাটফর্ম লগস, ও ৪-ব্যান্ড NDVI স্কেল লিজেন্ড রয়েছে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৩.৩ ফ্রি রিয়েলটাইম NDVI <span class="badge badge-free">ফ্রি · NASA GIBS</span></h3>
+        <p>"🚀 GEE লাইভ অ্যানালিসিস রান করুন" বাটন চাপলে অ্যাপ <b>NASA GIBS MODIS Terra NDVI 8-Day</b> রাস্টার টাইল ফেচ করে প্রতিটি সিড প্লান্টেশন কো-অর্ডিনেটে। প্রতিটি ২৫৬×২৫৬ পিক্সেল PNG টাইল ডাউনলোড হয়ে ক্যানভাসে ডিকোড করা হয়, সঠিক পিক্সেল স্যাম্পল করে greenness ratio (G−R)/(G+R) গণনা করা হয়, এবং সকল সাইটের গড় NDVI তৈরি হয়।</p>
+        <div class="card card-emerald">
+            <div class="card-title">✓ সম্পূর্ণ ফ্রি</div>
+            <p style="margin:0">এই ফিচারটি সম্পূর্ণ ফ্রি — কোনো API কী, অথ, বা বিলিং প্রয়োজন নেই। NASA GIBS একটি পাবলিক, CORS-সক্ষম WMTS এন্ডপয়েন্ট। স্যাম্পলিং সম্পন্ন হলে একটি <b>LIVE · NASA GIBS · FREE</b> ব্যাজ দেখানো হয়।</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৩.৪ ক্লাউড পাইপলাইন বাটন</h3>
+        <p>নিচ-ডান কোণায় একটি কম্প্যাক্ট FAB যা সার্ভারের <code>/api/gee-ndvi</code> এন্ডপয়েন্ট কল করে। এটি একটি ডেমো এস্টিমেট রিটার্ন করে (AI-জেনারেটেড বিশ্লেষণ সহ)। ফ্রি GIBS স্যাম্পলার এই বাটনের সাথে সিঙ্কে থাকে — যেকোনো একটি চাপলে উভয়ের স্টেট আপডেট হয়।</p>
+    </div>
+</div>
+
+<!-- Chapter 4 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৪</span>
+        <h2 class="chapter-title">প্রোফাইল ট্যাব — ব্যবহারকারী পরিচয় ও টোকেন</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>প্রোফাইল ট্যাবে আপনার পরিচয়, রোল, XP, টোকেন, ও নেটওয়ার্ক স্ট্যাটাস দেখা যায়। এখানে একটি গ্রেডিয়েন্ট এমেরাল্ড ফার্মার্স কার্ড (নাম, রোল ব্যাজ, ID, NID, JobID সহ), রেজিস্ট্রেশন ফর্ম, টোকেন ইকোনমি কার্ড, অ্যাডমিন লিংক (অ্যাডমিন রোলের জন্য), নেটওয়ার্ক ও GPS স্ট্যাটাস, ও রিসেন্ট অ্যাক্টিভিটি রয়েছে।</p>
+
+    <div class="section">
+        <h3 class="section-title">৪.১ ফার্মার্স কার্ড</h3>
+        <p>একটি গ্রেডিয়েন্ট এমেরাল্ড কার্ড যা আপনার নাম, রোল ব্যাজ, ID, NID, ও JobID দেখায়। রোল অনুযায়ী ব্যাজ: "নাগরিক কার্ড" বা "SAAO কার্ড"। এখান থেকে এডিট/রেজিস্টার বাটনে ক্লিক করে প্রোফাইল আপডেট করা যায়।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৪.২ রেজিস্ট্রেশন ফর্ম</h3>
+        <p>নতুন ব্যবহারকারীদের জন্য: নাম + মোবাইল (বাধ্যতামূলক), NID (ঐচ্ছিক +১০ টোকেন), অফিসার হলে Job ID + পদবি, জেলা + উপজেলা। একটি লাইভ প্রিভিউ কার্ড দেখায় যে বর্তমানে কত টোকেন পাবেন। সেভ করলে প্রোফাইল IndexedDB-তে সংরক্ষিত হয় এবং সার্ভারে সিঙ্ক হয়।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৪.৩ টোকেন ইকোনমি</h3>
+        <p>XP ও লেভেল প্রোগ্রেস বার (প্রতি ১০০ XP = ১ লেভেল), গ্রিন টোকেন ব্যালেন্স, ও স্ট্রিক কাউন্ট। রিসেন্ট অ্যাক্টিভিটি (সর্বশেষ ১০টি টোকেন ট্রানজেকশন) নিচে দেখানো হয়।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৪.৪ নেটওয়ার্ক ও GPS</h3>
+        <p>অনলাইন স্ট্যাটাস, স্টোরেজ এস্টিমেট, বর্তমান GPS কো-অর্ডিনেট (কপি-টু-ক্লিপবোর্ড সহ), ও রুরাল ডেটা সেভার টগল। রুরাল ডেটা সেভার চালু থাকলে অ্যাপ টাইল লোডিং কমিয়ে ডেটা সাশ্রয় করে।</p>
+    </div>
+</div>
+
+<!-- Chapter 5 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৫</span>
+        <h2 class="chapter-title">ড্যাশবোর্ড ট্যাব — পরিসংখ্যান, স্বাস্থ্য ও পুরস্কার</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>ড্যাশবোর্ডে তিনটি সাব-ট্যাব: <b>পরিসংখ্যান (Metrics)</b>, <b>স্বাস্থ্য (Health)</b>, ও <b>পুরস্কার (Wealth)</b>।</p>
+
+    <div class="section">
+        <h3 class="section-title">৫.১ পরিসংখ্যান ট্যাব</h3>
+        <p>আপনার IndexedDB সাবমিশন থেকে সমষ্টিগত পরিসংখ্যান: মোট এন্ট্রি, মোট চারা, বার্ষিক CO₂ শোষণ, এন্ট্রি মোড ব্রেকডাউন, প্রজাতি ও জেলা বিতরণ, ও জাতীয় লক্ষ্যমাত্রা প্রগ্রেস।</p>
+        <div class="card card-sky">
+            <div class="card-title">🌱 সিড ডেটা ব্লক <span class="badge badge-new">নতুন</span></div>
+            <p style="margin:0">Tree Plantation Workbook থেকে এক্সট্র্যাক্ট করা ৩৬টি প্লান্টেশন এন্ট্রির পরিসংখ্যান আলাদা স্কাই-থিম ব্লকে দেখানো হয় — মোট এন্ট্রি (৩৬), মোট চারা (৩,৭৩২), শীর্ষ প্রজাতি, ও জেলা বিতরণ। এই ডেটা আপনার সাবমিশন থেকে আলাদা — এটি একটি বেসলাইন হিসেবে কাজ করে।</p>
+        </div>
+        <div class="card card-emerald">
+            <div class="card-title">💾 ডেটাবেস সিঙ্ক ব্লক</div>
+            <p style="margin:0">অ্যাডমিন হলে একটি "সিড ডেটা ডেটাবেসে পাঠান" বাটন দেখানো হয়। এটি চাপলে ৩৬টি সিড রেকর্ড সার্ভারের Prisma ডেটাবেসে বাল্ক-আপসার্ট হয় (idempotent — <code>clientUid = seed-${sl}</code> দ্বারা ডিডাপ নিশ্চিত)। সিঙ্ক সম্পন্ন হলে একটি SeedSync রেকর্ড তৈরি হয় যা সর্বশেষ সিঙ্কের তারিখ, রেকর্ড সংখ্যা, ও ওয়ার্কবুক SHA-256 হ্যাশ সংরক্ষণ করে।</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৫.২ স্বাস্থ্য ট্যাব</h3>
+        <p>প্রতিটি প্লান্টেশন এন্ট্রির জন্য বৃদ্ধি প্রোগনোসিস: প্রত্যাশিত উচ্চতা, ক্যানোপি রেডিয়াস, সারভাইভাল প্রবাবিলিটি, হেলথ স্টেটাস, রিজিওনাল বেঞ্চমার্ক, পারফরম্যান্স ইনডেক্স, ও সিলভিকালচার অ্যাডভাইজরি।</p>
+        <div class="card card-sky">
+            <div class="card-title">🌱 সিড এন্ট্রি ইন্টিগ্রেশন <span class="badge badge-new">নতুন</span></div>
+            <p style="margin:0 0 8px 0">এন্ট্রি সিলেক্টর এখন তিনটি গ্রুপে বিভক্ত:</p>
+            <ol style="margin:0">
+                <li><b>💡 ক্যালকুলেটর (ম্যানুয়াল)</b> — কাস্টম প্রজাতি/তারিখ/অঞ্চল দিয়ে সিমুলেশন</li>
+                <li><b>🌱 সিড ডেটা (৩৬ টি)</b> — ওয়ার্কবুকের প্রতিটি এন্ট্রি, বাস্তব প্রজাতি/তারিখ/জেলা/উপজেলা সহ</li>
+                <li><b>📋 আমার এন্ট্রি</b> — আপনার IndexedDB সাবমিশন</li>
+            </ol>
+            <p style="margin:8px 0 0 0">একটি সিড এন্ট্রি নির্বাচন করলে একটি সামারি কার্ড দেখায়: জেলা, উপজেলা, প্রজাতি, সংখ্যা, রোপণ তারিখ, GPS, পরিচর্যাকারী, ও SAAO। নিচের গ্রোথ প্রোগনোসিস কার্ড সেই এন্ট্রির প্রজাতি ও জেলা অনুযায়ী স্বয়ংক্রিয়ভাবে আপডেট হয়।</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৫.৩ পুরস্কার ট্যাব</h3>
+        <p>লেভেল ও XP কার্ড, কিউমুলেটিভ সাবমিশন রিওয়ার্ড, টোকেন আর্নিং গাইড (১০-সারি রিওয়ার্ড টেবিল), ও ডেটা রিচনেস টিপ।</p>
+    </div>
+</div>
+
+<!-- Chapter 6 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৬</span>
+        <h2 class="chapter-title">AI কো-পাইলট — চ্যাট ও রোগ নির্ণয়</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>নিচ-ডান কোণায় একটি ফ্লোটিং বাটন "AI কো-পাইলট"। ক্লিক করলে একটি মডাল খোলে যেখানে দুটি ট্যাব: চ্যাট ও রোগ নির্ণয়।</p>
+
+    <div class="section">
+        <h3 class="section-title">৬.১ চ্যাট</h3>
+        <p>বাংলাদেশী বনায়ন, উদ্ভিদ রোগ, নার্সারি ম্যানেজমেন্ট, সার প্রয়োগ, ও চারা রোপণ গাইডলাইন সম্পর্কে প্রশ্ন জিজ্ঞাসা করুন। AI সহজ ও প্রাঞ্জল বাংলায় উত্তর দেয়। মাল্টি-টার্ন কনভার্সেশন সাপোর্টেড।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৬.২ রোগ নির্ণয়</h3>
+        <p>একটি চারা বা পাতার ছবি আপলোড করুন। AI প্রজাতি চিহ্নিত করে, দৃশ্যমান রোগ/পেস্ট বিশ্লেষণ করে, জৈব/রাসায়নিক সমাধান প্রস্তাব করে, সারের সিডিউল দেয়, ও সাধারণ যত্নের পরামর্শ দেয়।</p>
+    </div>
+</div>
+
+<!-- Chapter 7 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৭</span>
+        <h2 class="chapter-title">অফলাইন মোড ও সিঙ্ক</h2>
+        <div class="chapter-divider"></div>
+    </div>
+    <p>অ্যাপটি অফলাইন-ফার্স্ট। সকল সাবমিশন IndexedDB-তে সংরক্ষিত হয়। ইন্টারনেট সংযোগ ফিরলে স্বয়ংক্রিয়ভাবে সার্ভারে সিঙ্ক হয়। নেটওয়ার্ক পুনঃসংযোগ হলে একটি টোস্ট দেখায়: "সিঙ্ক হচ্ছে..." → "Xটি সিঙ্ক সম্পন্ন"। সিঙ্ক ব্যর্থ হলে একটি রিট্রাই বাটন থাকে। ড্যাশবোর্ডে "সিঙ্ক করুন" বাটন চাপলে সকল আনসিঙ্কড সাবমিশন সার্ভারে পাঠানো হয়। প্রতিটি সাবমিশন <code>clientUid</code> দ্বারা idempotent — ডুপ্লিকেট সিঙ্ক নিরাপদ।</p>
+</div>
+
+<!-- Chapter 8 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৮</span>
+        <h2 class="chapter-title">অ্যাডমিন গাইড — সিড ডেটা ও ইউজার ম্যানেজমেন্ট</h2>
+        <div class="chapter-divider"></div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৮.১ সিড ডেটা আপডেট</h3>
+        <p><code>seed/Tree_Plantation_Reporting_Workbook.xlsx</code> ফাইলটি প্রতিস্থাপন করুন (একই নামে) এবং রান করুন:</p>
+        <pre><code>python3 scripts/build_seed_data.py</code></pre>
+        <p>এটি <code>src/data/seedPlantations.ts</code> ও <code>src/data/seedPlantations.json</code> রিজেনারেট করবে। তিনটি ফাইল কমিট করুন (<code>.xlsx</code> + দুটি জেনারেটেড ফাইল)।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৮.২ অ্যাডমিন allow-list আপডেট</h3>
+        <p><code>seed/admins.json</code> ফাইলে নতুন ইউজার যোগ করুন:</p>
+        <pre><code>{
+  "email": "new.officer@dae.gov.bd",
+  "role": "cadre",
+  "name": "নতুন অফিসার",
+  "mobile": "017XXXXXXXX",
+  "designation": "UAO",
+  "district": "কুড়িগ্রাম",
+  "upazila": "উলিপুর"
+}</code></pre>
+        <p>সার্ভার রিস্টার্ট হলে allow-list রিলোড হয়। ইউজার অ্যাপ খুললে স্বয়ংক্রিয়ভাবে তার প্রোফাইল তৈরি হবে।</p>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৮.৩ API এন্ডপয়েন্ট</h3>
+        <table>
+            <thead><tr><th>এন্ডপয়েন্ট</th><th>মেথড</th><th>বর্ণনা</th></tr></thead>
+            <tbody>
+                <tr><td><code>/api/auth/bootstrap</code></td><td>GET</td><td>পাবলিক allow-list ফেচ</td></tr>
+                <tr><td><code>/api/auth/profile</code></td><td>POST</td><td>প্রোফাইল আপসার্ট (টোকেন বোনাস সহ)</td></tr>
+                <tr><td><code>/api/auth/me</code></td><td>GET</td><td>ইমেল দিয়ে প্রোফাইল ফেচ</td></tr>
+                <tr><td><code>/api/users</code></td><td>GET</td><td>ইউজার লিস্ট (অ্যাডমিন/ক্যাডার)</td></tr>
+                <tr><td><code>/api/seed/sync-status</code></td><td>GET</td><td>সর্বশেষ সিড সিঙ্ক স্ট্যাটাস</td></tr>
+                <tr><td><code>/api/seed/sync</code></td><td>POST</td><td>সিড বাল্ক-আপসার্ট (অ্যাডমিন)</td></tr>
+                <tr><td><code>/api/sync</code></td><td>POST</td><td>সাবমিশন সিঙ্ক</td></tr>
+                <tr><td><code>/api/ai/chat</code></td><td>POST</td><td>Gemini AI চ্যাট</td></tr>
+                <tr><td><code>/api/ai/diagnose</code></td><td>POST</td><td>Gemini AI ইমেজ নির্ণয়</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Chapter 9 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ০৯</span>
+        <h2 class="chapter-title">টোকেন ও XP পুরস্কার সিস্টেম</h2>
+        <div class="chapter-divider"></div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৯.১ প্রোফাইল পুরস্কার</h3>
+        <table>
+            <thead><tr><th>ফিল্ড</th><th>টোকেন</th></tr></thead>
+            <tbody>
+                <tr><td>নাম</td><td>+৫</td></tr>
+                <tr><td>মোবাইল</td><td>+৫</td></tr>
+                <tr><td>NID</td><td>+১০</td></tr>
+                <tr><td>Job ID</td><td>+১০</td></tr>
+                <tr><td>পদবি</td><td>+৫</td></tr>
+                <tr><td>জেলা</td><td>+৩</td></tr>
+                <tr><td>উপজেলা</td><td>+২</td></tr>
+                <tr><td><b>সম্পূর্ণতা বোনাস</b></td><td><b>+২৫</b> (এককালীন)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৯.২ সাবমিশন পুরস্কার</h3>
+        <table>
+            <thead><tr><th>ফিল্ড</th><th>XP</th><th>টোকেন</th></tr></thead>
+            <tbody>
+                <tr><td>ফর্ম বেস</td><td>১০</td><td>২</td></tr>
+                <tr><td>সম্পূর্ণ লোকেশন</td><td>৫</td><td>৩</td></tr>
+                <tr><td>সুনির্দিষ্ট GPS</td><td>৫</td><td>২</td></tr>
+                <tr><td>ভেরিফিকেশন GPS</td><td>৮</td><td>৩</td></tr>
+                <tr><td>প্রতি প্রজাতি</td><td>৩</td><td>১</td></tr>
+                <tr><td>প্রতি ফটো</td><td>৫</td><td>২</td></tr>
+                <tr><td>পরিচর্যাকারী</td><td>৩</td><td>১</td></tr>
+                <tr><td>SAAO</td><td>৫</td><td>২</td></tr>
+                <tr><td>মনিটরিং অফিসার</td><td>৫</td><td>২</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">৯.৩ সিড সিঙ্ক পুরস্কার</h3>
+        <table>
+            <thead><tr><th>অ্যাকশন</th><th>XP</th><th>টোকেন</th></tr></thead>
+            <tbody>
+                <tr><td>প্রতি সিড রেকর্ড সিঙ্ক</td><td>+২</td><td>প্রতি ৫টিতে +১</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Chapter 10 -->
+<div class="chapter">
+    <div class="chapter-header">
+        <span class="chapter-number">অধ্যায় ১০</span>
+        <h2 class="chapter-title">সমস্যা সমাধান (Troubleshooting)</h2>
+        <div class="chapter-divider"></div>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">ম্যাপ টাইল লোড হচ্ছে না</h3>
+        <ul>
+            <li>ইন্টারনেট সংযোগ চেক করুন</li>
+            <li>রুরাল ডেটা সেভার বন্ধ করে দেখুন (প্রোফাইল ট্যাব)</li>
+            <li>লেয়ার সুইচ করে OSM-এ চলে যান — যদি OSM লোড হয় কিন্তু NDVI না হয়, তাহলে NASA GIBS সার্ভার সমস্যা</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">GPS কাজ করছে না</h3>
+        <ul>
+            <li>ব্রাউজার লোকেশন পারমিশন চেক করুন</li>
+            <li>খোলা আকাশের নিচে যান</li>
+            <li>ডিভাইস রিস্টার্ট করুন</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">সিঙ্ক ব্যর্থ হচ্ছে</h3>
+        <ul>
+            <li>সার্ভার চালু আছে কিনা চেক করুন (<code>/api/health</code>)</li>
+            <li>নেটওয়ার্ক স্ট্যাটাস ইন্ডিকেটর দেখুন</li>
+            <li>ম্যানুয়াল রিট্রাই বাটন চাপুন</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h3 class="section-title">NDVI সিমুলেটর রিয়েলটাইম স্যাম্পল ব্যর্থ</h3>
+        <ul>
+            <li>NASA GIBS সার্ভার সময়ে সময়ে ডাউন থাকে — কয়েক মিনিট পরে আবার চেষ্টা করুন</li>
+            <li>CORS এরর হলে ব্রাউজার আপডেট করুন</li>
+            <li>ফায়ারওয়ালে <code>gibs.earthdata.nasa.gov</code> ব্লক করা আছে কিনা চেক করুন</li>
+        </ul>
+    </div>
+</div>
+
+</div>
+
+<!-- ═══ ENDING ═══ -->
+<div class="ending">
+    <h2 class="ending-title">ধন্যবাদ</h2>
+    <p class="ending-text">এই গাইডটি অ্যাপের সাথে সংস্করণযুক্ত এবং <code>USER_GUIDE.md</code> ফাইলে সংরক্ষিত। আপডেটের জন্য ফাইলটি এডিট করে কমিট করুন। প্রযুক্তিগত সহায়তার জন্য প্রজেক্ট রেপোতে issue খুলুন।</p>
+    <div class="ending-meta">
+        github.com/moniruzjaman/plantation-tracker-app<br>
+        v2.1.0 · জুলাই ২০২৬ · DAE Bangladesh
+    </div>
+</div>
+
+</body>
+</html>

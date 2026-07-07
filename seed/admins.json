@@ -1,0 +1,93 @@
+{
+  "_comment": "Bootstrap allow-list for first-install user profile auto-fetch. When the app installs for the first time, it calls GET /api/auth/bootstrap which returns this list. If the user-entered (or device-detected) email matches an entry here, the app auto-creates a UserProfile with the role/name/mobile/designation pre-populated — no manual form fill needed. To add a new admin/cadre/SAAO, append an entry below and redeploy. To revoke, remove the entry (the user's existing IndexedDB profile remains, but server-side auth will reject them).",
+  "_roles": {
+    "admin": "Full access — Dashboard, all submissions, user management, seed sync",
+    "cadre": "Monitoring officer — own submissions + view all submissions in assigned upazila",
+    "officer": "SAAO — own submissions + view submissions in assigned block",
+    "citizen": "Self-submission only — no access to others' data"
+  },
+  "_mandatoryFieldsAfterBootstrap": ["name", "mobile"],
+  "_tokenBoostFields": ["nid", "jobId", "designation", "district", "upazila"],
+  "users": [
+    {
+      "email": "moniruzjaman@dae.gov.bd",
+      "role": "admin",
+      "name": "মনিরুজ্জামান",
+      "mobile": "",
+      "designation": "Deputy Project Director",
+      "district": "কুড়িগ্রাম",
+      "upazila": "",
+      "notes": "Project lead / repo owner. Replace with real DAE email before production deploy."
+    },
+    {
+      "email": "ddo.kurigram@dae.gov.bd",
+      "role": "admin",
+      "name": "",
+      "mobile": "",
+      "designation": "Deputy Director of Agriculture (DDA)",
+      "district": "কুড়িগ্রাম",
+      "upazila": "",
+      "notes": "District DDA — fallback admin. Replace with real email before deploy."
+    },
+    {
+      "email": "uae.kurigram-sadar@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "UAO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "কুড়িগ্রাম সদর",
+      "notes": "Upazila Agriculture Officer, Kurigram Sadar — monitoring officer cadre."
+    },
+    {
+      "email": "uae.bhurungamari@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "UAO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "ভুরুঙ্গামারী",
+      "notes": "Upazila Agriculture Officer, Bhurungamari."
+    },
+    {
+      "email": "uae.rajarhat@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "UAO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "রাজারহাট",
+      "notes": "Upazila Agriculture Officer, Rajarhat."
+    },
+    {
+      "email": "aeo.kurigram-sadar-1@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "AEO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "কুড়িগ্রাম সদর",
+      "notes": "Agriculture Extension Officer 1, Kurigram Sadar."
+    },
+    {
+      "email": "aeo.kurigram-sadar-2@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "AEO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "কুড়িগ্রাম সদর",
+      "notes": "Agriculture Extension Officer 2, Kurigram Sadar."
+    },
+    {
+      "email": "aao.kurigram-sadar@dae.gov.bd",
+      "role": "cadre",
+      "name": "",
+      "mobile": "",
+      "designation": "AAO",
+      "district": "কুড়িগ্রাম",
+      "upazila": "কুড়িগ্রাম সদর",
+      "notes": "Additional Agriculture Officer, Kurigram Sadar."
+    }
+  ]
+}

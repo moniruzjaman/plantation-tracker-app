@@ -21,6 +21,9 @@ import {
   Zap,
   WifiOff,
   RefreshCw,
+  FileSpreadsheet,
+  Cloud,
+  Sprout,
 } from 'lucide-react';
 import { calculateCarbonV2, getSpeciesCategory } from '../utils/carbonMath';
 import { calculateGrowthPrognosis, SPECIES_GROWTH_PARAMS } from '../utils/growthModel';
@@ -28,6 +31,13 @@ import { getSubmissions, countUnsynced, getSubmissionReward } from '../lib/db';
 import { useAuth } from '../hooks/useAuth';
 import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
+import { SEED_PLANTATIONS, SEED_STATS } from '../data/seedPlantations';
+import {
+  fetchSeedSyncStatus,
+  syncSeedRecords,
+  type SeedSyncStatus,
+  type SeedSyncResponse,
+} from '../lib/authBootstrap';
 
 interface OfflinePlantationDashboardProps {
   syncState?: {
@@ -51,6 +61,80 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
   const [customPlantingDate, setCustomPlantingDate] = useState<string>('2026-03-15');
   const [customDistrict, setCustomDistrict] = useState<string>('Rajshahi');
 
+  // ---- Seed data sync state (admin-triggered bulk upsert to DB) ----
+  const [seedSyncState, setSeedSyncState] = useState<{
+    loading: boolean;
+    syncing: boolean;
+    lastSync: SeedSyncStatus['lastSync'];
+    seedSubmissionsInDb: number;
+    syncResult: SeedSyncResponse | null;
+    error: string | null;
+  }>({
+    loading: true,
+    syncing: false,
+    lastSync: null,
+    seedSubmissionsInDb: 0,
+    syncResult: null,
+    error: null,
+  });
+
+  // Admin/cadre permission check (server roles are admin/cadre/officer/citizen;
+  // existing client-side roles are citizen/officer/district_admin/national_director).
+  // We grant seed-sync permission to officers + admins.
+  const isAdmin = session?.role === 'district_admin' || session?.role === 'national_director' || session?.role === 'officer';
+
+  // Fetch seed sync status on mount + when tab switches to metrics
+  const refreshSeedSyncStatus = useCallback(async () => {
+    setSeedSyncState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const status = await fetchSeedSyncStatus();
+      setSeedSyncState({
+        loading: false,
+        syncing: false,
+        lastSync: status.lastSync,
+        seedSubmissionsInDb: status.seedSubmissionsInDb,
+        syncResult: null,
+        error: null,
+      });
+    } catch (err: any) {
+      setSeedSyncState((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'সিঙ্ক স্ট্যাটাস লোড ব্যর্থ',
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSeedSyncStatus();
+  }, [refreshSeedSyncStatus]);
+
+  // Trigger bulk upsert of seed plantation records into the DB (admin only)
+  const handleSyncSeedData = useCallback(async () => {
+    setSeedSyncState((prev) => ({ ...prev, syncing: true, error: null, syncResult: null }));
+    try {
+      const syncedByEmail = session?.profile?.id || session?.uid || 'unknown';
+      const result = await syncSeedRecords(SEED_PLANTATIONS, syncedByEmail);
+      setSeedSyncState((prev) => ({
+        ...prev,
+        syncing: false,
+        syncResult: result,
+        seedSubmissionsInDb: prev.seedSubmissionsInDb + result.upsertedCount,
+      }));
+      // Award XP for the sync action
+      if (result.upsertedCount > 0) {
+        addXp(result.upsertedCount * 2, 'সিড ডেটা সিঙ্ক');
+        addTokens(Math.floor(result.upsertedCount / 5), 'ডেটাবেস সিঙ্ক বোনাস');
+      }
+    } catch (err: any) {
+      setSeedSyncState((prev) => ({
+        ...prev,
+        syncing: false,
+        error: err.message || 'সিঙ্ক ব্যর্থ',
+      }));
+    }
+  }, [session, addXp, addTokens]);
+
   // Fetch submissions from IndexedDB (V2 pipeline)
   const fetchSubmissions = useCallback(async () => {
     try {
@@ -68,8 +152,49 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
     fetchSubmissions();
   }, [fetchSubmissions]);
 
-  // Get currently selected submission
-  const selectedSubmission = submissions.find(s => s.id === selectedSubmissionId);
+  // Get currently selected submission — supports 3 ID prefixes:
+  //   'custom'              → manual calculator (no real submission)
+  //   'seed:<sl>'           → seed plantation entry from the workbook
+  //   <PlantationSubmission.id> → user's own submission from IndexedDB
+  const isSeedSelection = selectedSubmissionId.startsWith('seed:');
+  const seedSl = isSeedSelection ? parseInt(selectedSubmissionId.replace('seed:', ''), 10) : NaN;
+  const selectedSeedEntry = !isNaN(seedSl) ? SEED_PLANTATIONS.find((p) => p.sl === seedSl) : undefined;
+
+  // Synthesize a PlantationSubmission-shaped object for seed entries so the
+  // rest of the health tab machinery (species list, planting date, district)
+  // works without modification.
+  const selectedSubmission = isSeedSelection && selectedSeedEntry
+    ? ({
+        id: `seed:${selectedSeedEntry.sl}`,
+        entryMode: 'dae_officer',
+        region: 'Rangpur',
+        district: selectedSeedEntry.district,
+        upazila: selectedSeedEntry.upazila,
+        union: '',
+        village: '',
+        seedlings: selectedSeedEntry.speciesName
+          ? [{
+              id: `seed-seedling-${selectedSeedEntry.sl}`,
+              speciesName: selectedSeedEntry.speciesName,
+              count: selectedSeedEntry.count,
+            }]
+          : [],
+        plantationDate: selectedSeedEntry.plantingDate,
+        latitude: selectedSeedEntry.latitude,
+        longitude: selectedSeedEntry.longitude,
+        accuracy: 0,
+        caretakerName: selectedSeedEntry.caretaker,
+        caretakerMobile: '',
+        saaoName: selectedSeedEntry.saao,
+        saaoMobile: '',
+        monitoringOfficerName: selectedSeedEntry.monitoringOfficer,
+        monitoringOfficerMobile: '',
+        photos: [],
+        timestamp: selectedSeedEntry.plantingDate || new Date().toISOString(),
+        synced: true,
+      } as PlantationSubmission)
+    : submissions.find(s => s.id === selectedSubmissionId);
+
   const activeDistrict = selectedSubmission?.district || customDistrict;
 
   // Extract all species from the selected submission (V2: flat seedlings)
@@ -414,6 +539,133 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                     </div>
                   )}
 
+                  {/* ─── Seed Data Block (from Tree Plantation Workbook) ─── */}
+                  <div className="flex flex-col gap-2 border-t-2 border-dashed border-sky-200 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-sky-800 text-[11px] flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-sky-500" />
+                        {language === 'bn' ? 'সিড ডেটা (Workbook)' : 'Seed Data (Workbook)'}
+                      </span>
+                      <span className="text-[9px] text-sky-600 font-mono bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
+                        process data
+                      </span>
+                    </div>
+
+                    {/* Seed stats grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-sky-50/60 border border-sky-100 rounded-lg p-2 flex flex-col items-center text-center">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600 mb-0.5" />
+                        <span className="text-[9px] font-medium text-sky-800 opacity-80 uppercase">
+                          {language === 'bn' ? 'মোট এন্ট্রি' : 'Entries'}
+                        </span>
+                        <span className="text-base font-extrabold text-sky-700">{toBnNum(SEED_STATS.totalEntries)}</span>
+                      </div>
+                      <div className="bg-sky-50/60 border border-sky-100 rounded-lg p-2 flex flex-col items-center text-center">
+                        <Leaf className="w-3.5 h-3.5 text-sky-600 mb-0.5" />
+                        <span className="text-[9px] font-medium text-sky-800 opacity-80 uppercase">
+                          {language === 'bn' ? 'মোট চারা' : 'Seedlings'}
+                        </span>
+                        <span className="text-base font-extrabold text-sky-700">{toBnNum(SEED_STATS.totalSeedlings)}</span>
+                      </div>
+                    </div>
+
+                    {/* Seed top species (top 3) */}
+                    {Object.entries(SEED_STATS.bySpecies).length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[9.5px] font-semibold text-gray-500 uppercase tracking-wider">
+                          {language === 'bn' ? 'শীর্ষ প্রজাতি (সিড)' : 'Top Species (Seed)'}
+                        </span>
+                        {Object.entries(SEED_STATS.bySpecies)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 3)
+                          .map(([name, count]) => (
+                            <div key={name} className="flex justify-between items-center bg-sky-50/40 rounded-lg px-2 py-1 border border-sky-100/60">
+                              <span className="font-medium text-gray-700 text-[11px] truncate">{name}</span>
+                              <span className="font-semibold text-sky-700 bg-white border border-sky-100 rounded px-1.5 py-0.5 text-[10px]">
+                                {toBnNum(count)} {language === 'bn' ? 'টি' : ''}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Seed top districts */}
+                    {Object.entries(SEED_STATS.byDistrict).length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[9.5px] font-semibold text-gray-500 uppercase tracking-wider">
+                          {language === 'bn' ? 'জেলা বিতরণ (সিড)' : 'District Spread (Seed)'}
+                        </span>
+                        {Object.entries(SEED_STATS.byDistrict)
+                          .sort((a, b) => b[1] - a[1])
+                          .slice(0, 3)
+                          .map(([name, count]) => (
+                            <div key={name} className="flex justify-between items-center bg-sky-50/40 rounded-lg px-2 py-1 border border-sky-100/60">
+                              <span className="font-medium text-gray-700 text-[11px]">{name}</span>
+                              <span className="font-semibold text-sky-700 bg-white border border-sky-100 rounded px-1.5 py-0.5 text-[10px]">
+                                {toBnNum(count)} {language === 'bn' ? 'টি' : ''}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+
+                    {/* Sync to DB block (admin only) */}
+                    {seedSyncState && (
+                      <div className="flex flex-col gap-1.5 bg-emerald-50/40 border border-emerald-100 rounded-lg p-2">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-semibold text-emerald-800 flex items-center gap-1">
+                            <Cloud className="w-3 h-3" />
+                            {language === 'bn' ? 'ডেটাবেস সিঙ্ক' : 'DB Sync'}
+                          </span>
+                          {seedSyncState.loading ? (
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              {language === 'bn' ? 'লোড হচ্ছে...' : 'Loading...'}
+                            </span>
+                          ) : seedSyncState.lastSync ? (
+                            <span className="text-emerald-700 font-mono">
+                              {new Date(seedSyncState.lastSync.syncedAt).toLocaleDateString(language === 'bn' ? 'bn-BD' : 'en-US')} · {toBnNum(seedSyncState.seedSubmissionsInDb)} {language === 'bn' ? 'টি' : ''}
+                            </span>
+                          ) : (
+                            <span className="text-amber-700">
+                              {language === 'bn' ? 'সিঙ্ক হয়নি' : 'Not synced'}
+                            </span>
+                          )}
+                        </div>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleSyncSeedData()}
+                            disabled={seedSyncState.syncing}
+                            className="w-full py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white text-[10px] font-bold transition-colors flex items-center justify-center gap-1"
+                          >
+                            {seedSyncState.syncing ? (
+                              <>
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                {language === 'bn' ? 'সিঙ্ক হচ্ছে...' : 'Syncing...'}
+                              </>
+                            ) : (
+                              <>
+                                <Cloud className="w-3 h-3" />
+                                {language === 'bn' ? 'সিড ডেটা ডেটাবেসে পাঠান' : 'Sync Seed Data to DB'}
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {seedSyncState.syncResult && (
+                          <div className="text-[9px] text-emerald-700 bg-emerald-50 rounded px-1.5 py-1 border border-emerald-100">
+                            ✓ {toBnNum(seedSyncState.syncResult.upsertedCount)} {language === 'bn' ? 'নতুন' : 'new'} · {toBnNum(seedSyncState.syncResult.skippedCount)} {language === 'bn' ? 'স্কিপ' : 'skipped'}
+                            {seedSyncState.syncResult.errorCount > 0 && ` · ${toBnNum(seedSyncState.syncResult.errorCount)} ${language === 'bn' ? 'ত্রুটি' : 'errors'}`}
+                          </div>
+                        )}
+                        {seedSyncState.error && (
+                          <div className="text-[9px] text-red-700 bg-red-50 rounded px-1.5 py-1 border border-red-100">
+                            ⚠ {seedSyncState.error}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Target progress */}
                   <div className="flex flex-col gap-1 bg-amber-50/40 border border-amber-100/50 p-2.5 rounded-xl text-[10.5px]">
                     <div className="flex items-center justify-between">
@@ -459,13 +711,61 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                   <option value="custom">
                     {language === 'bn' ? '💡 ক্যালকুলেটর (ম্যানুয়াল)' : '💡 Custom Estimator'}
                   </option>
-                  {submissions.map((sub, idx) => (
-                    <option key={sub.id} value={sub.id}>
-                      {sub.village || sub.union || `Entry #${idx + 1}`} ({sub.district}) — {sub.seedlings.length} {language === 'bn' ? 'প্রজাতি' : 'species'}
-                    </option>
-                  ))}
+
+                  {/* Seed plantation entries from the workbook */}
+                  {SEED_PLANTATIONS.length > 0 && (
+                    <optgroup label={language === 'bn' ? `🌱 সিড ডেটা (${toBnNum(SEED_PLANTATIONS.length)} টি)` : `🌱 Seed Data (${SEED_PLANTATIONS.length})`}>
+                      {SEED_PLANTATIONS.map((p) => (
+                        <option key={`seed-${p.sl}`} value={`seed:${p.sl}`}>
+                          SL {toBnNum(p.sl)} · {p.speciesName} ({p.district}/{p.upazila}) — {toBnNum(p.count)} {language === 'bn' ? 'টি' : 'trees'}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+
+                  {/* User's own submissions from IndexedDB */}
+                  {submissions.length > 0 && (
+                    <optgroup label={language === 'bn' ? `📋 আমার এন্ট্রি (${toBnNum(submissions.length)} টি)` : `📋 My Submissions (${submissions.length})`}>
+                      {submissions.map((sub, idx) => (
+                        <option key={sub.id} value={sub.id}>
+                          {sub.village || sub.union || `Entry #${idx + 1}`} ({sub.district}) — {sub.seedlings.length} {language === 'bn' ? 'প্রজাতি' : 'species'}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
+
+              {/* Selected seed entry summary card (only when a seed entry is selected) */}
+              {isSeedSelection && selectedSeedEntry && (
+                <div className="bg-sky-50/60 border border-sky-200 rounded-lg p-2 text-[10.5px] text-slate-700 flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sky-800 flex items-center gap-1">
+                      <Sprout className="w-3 h-3" />
+                      {language === 'bn' ? 'সিড এন্ট্রি বিস্তারিত' : 'Seed Entry Details'}
+                    </span>
+                    <span className="text-[9px] font-mono text-sky-600 bg-white border border-sky-200 px-1.5 py-0.5 rounded">
+                      SL {toBnNum(selectedSeedEntry.sl)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                    <div><b>{language === 'bn' ? 'জেলা' : 'District'}:</b> {selectedSeedEntry.district}</div>
+                    <div><b>{language === 'bn' ? 'উপজেলা' : 'Upazila'}:</b> {selectedSeedEntry.upazila}</div>
+                    <div><b>{language === 'bn' ? 'প্রজাতি' : 'Species'}:</b> {selectedSeedEntry.speciesName}</div>
+                    <div><b>{language === 'bn' ? 'সংখ্যা' : 'Count'}:</b> {toBnNum(selectedSeedEntry.count)} {language === 'bn' ? 'টি' : ''}</div>
+                    <div><b>{language === 'bn' ? 'রোপণ' : 'Planted'}:</b> {selectedSeedEntry.plantingDate}</div>
+                    <div className="font-mono text-[9px] text-slate-500">
+                      {selectedSeedEntry.latitude.toFixed(5)}, {selectedSeedEntry.longitude.toFixed(5)}
+                    </div>
+                  </div>
+                  {selectedSeedEntry.caretaker && (
+                    <div className="text-[9.5px] text-slate-500 border-t border-sky-100 pt-0.5 mt-0.5">
+                      👤 {selectedSeedEntry.caretaker}
+                      {selectedSeedEntry.saao && <span className="ml-2">🏢 {selectedSeedEntry.saao}</span>}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Species & Date Pickers */}
               <div className={`grid gap-2 ${selectedSubmissionId === 'custom' ? 'grid-cols-3' : 'grid-cols-2'}`}>
