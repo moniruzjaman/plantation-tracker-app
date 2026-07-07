@@ -1,15 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef, type JSX } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import type { LatLngBounds, Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Cloud, RefreshCw, CheckCircle2, AlertTriangle, BarChart3, Plus, Minus, Crosshair, Loader2 } from 'lucide-react';
+import { Cloud, RefreshCw, CheckCircle2, AlertTriangle, BarChart3, Plus, Minus, Crosshair, Loader2, Satellite, Trees } from 'lucide-react';
 import type { GeoState } from '../GeolocationIndicator';
 import {
   type LayerId,
   getLayerTiles,
   NDVI_BANDS,
+  toBnNum,
 } from '../../utils/mapHelper';
+import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
+import { SEED_PLANTATIONS } from '../../data/seedPlantations';
 
 // ---------- Fix #2: Leaflet default marker icon paths break with Vite bundling ----------
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -41,7 +44,8 @@ interface PipelineResult {
   ai_analysis?: string;
 }
 
-type PipelineState = 'idle' | 'running' | 'success' | 'error';
+// NOTE: PipelineState is now imported from ./NDVISimulatorPanel to keep the
+// Map page pipeline button and the new NDVI Simulator panel in sync.
 
 // ---------- Sub-components ----------
 
@@ -259,6 +263,8 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapKey, setMapKey] = useState(0);
+  // NDVI Simulator & Canopy Growth Tracker panel visibility
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
 
   const center: [number, number] = geoState?.coords
     ? [geoState.coords.latitude, geoState.coords.longitude]
@@ -355,6 +361,52 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           url={tiles.url}
           attribution={tiles.attribution}
         />
+
+        {/* Seed plantation markers from the Tree Plantation Reporting Workbook.
+            Each circle marker is colored emerald (matches project palette) and
+            shows a tooltip with the species + count on hover. Click for full
+            details in the popup. */}
+        {SEED_PLANTATIONS
+          .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+          .map((p) => (
+            <CircleMarker
+              key={`seed-${p.sl}`}
+              center={[p.latitude, p.longitude]}
+              radius={6}
+              pathOptions={{
+                color: '#047857',          // emerald-700 ring
+                fillColor: '#10b981',       // emerald-500 fill
+                fillOpacity: 0.75,
+                weight: 2,
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                <div className="text-[10px] leading-tight">
+                  <div className="font-bold">{p.speciesName}</div>
+                  <div className="text-slate-600">
+                    {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+                  </div>
+                </div>
+              </Tooltip>
+              <Popup>
+                <div className="text-xs min-w-[180px]">
+                  <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                    <Trees size={12} /> {p.speciesName}
+                  </div>
+                  <div className="space-y-0.5 text-[11px] text-slate-700">
+                    <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                    <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
+                    <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
+                    <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
+                    <div className="font-mono text-[10px] text-slate-500 mt-1">
+                      {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                    </div>
+                  </div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+
         <BoundsTracker onBoundsChange={setBounds} />
       </MapContainer>
 
@@ -364,13 +416,42 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
       <BoundsOverlay bounds={bounds} />
       <TileStatusIndicator loading={tileLoading} error={tileError} />
 
+      {/* Existing compact cloud-pipeline FAB */}
       <div className="absolute bottom-3 right-2 sm:bottom-4 sm:right-3 z-[1000]">
         <CloudPipelineButton state={pipelineState} onRun={runPipeline} />
+      </div>
+
+      {/* NDVI Simulator & Canopy Growth Tracker — opens a side panel */}
+      <div className="absolute bottom-3 left-2 sm:bottom-4 sm:left-3 z-[1000]">
+        <button
+          onClick={() => setSimulatorOpen(true)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg transition-all active:scale-95 cursor-pointer text-xs font-bold ${
+            simulatorOpen
+              ? 'bg-emerald-800 text-white'
+              : 'bg-white/95 backdrop-blur text-emerald-800 hover:bg-emerald-50 border border-emerald-200'
+          }`}
+          title="উপগ্রহ এনডিভিআই সিমুলেটর ও বৃদ্ধি ট্র্যাকিং"
+        >
+          <Satellite size={14} className={simulatorOpen ? 'text-emerald-300' : 'text-emerald-600'} />
+          <span className="hidden sm:inline">NDVI সিমুলেটর</span>
+          <span className="sm:hidden">NDVI</span>
+        </button>
       </div>
 
       {result && pipelineState !== 'running' && (
         <ResultOverlay result={result} onClose={() => setResult(null)} />
       )}
+
+      {/* The full NDVI + Canopy Growth Tracker panel.
+          Shares pipelineState + runPipeline so the simulator's "Run Cloud
+          Pipeline" button and the existing compact FAB stay in sync. */}
+      <NDVISimulatorPanel
+        open={simulatorOpen}
+        onClose={() => setSimulatorOpen(false)}
+        pipelineState={pipelineState}
+        onRunPipeline={runPipeline}
+        liveNdvi={result?.ndvi_mean ?? null}
+      />
     </div>
   );
 }
