@@ -4,6 +4,7 @@ import { getTokenHistory } from '../../utils/tokenHistory';
 import { getProfileCompleteness, getProfileTokenReward } from '../../lib/db';
 import { toBnNum } from '../../utils/mapHelper';
 import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck, Wifi, WifiOff, CircleDot, Copy, Check, HardDrive, HelpCircle, ChevronRight, Share2, Save, UserPlus, BadgeCheck, UserIcon } from 'lucide-react';
+import UserGuideModal from '../UserGuideModal';
 import type { UserRole, ProfileRole } from '../../types';
 import type { GeoState } from '../GeolocationIndicator';
 import type { NetworkStatusData } from '../NetworkStatus';
@@ -58,6 +59,7 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
   const [regUpazila, setRegUpazila] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   // Pre-fill from existing profile when editing
   useEffect(() => {
@@ -126,8 +128,7 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
   };
 
   const handleOpenUserGuide = () => {
-    const guideBtn = document.getElementById('btnShowWelcomeHelp');
-    if (guideBtn) guideBtn.click();
+    setGuideOpen(true);
   };
 
   const handleRegister = async () => {
@@ -541,6 +542,9 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
           </div>
         )}
       </section>
+
+      {/* In-app User Guide modal — opened from the "টিউটোরিয়াল" button */}
+      <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }
