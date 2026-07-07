@@ -24,6 +24,9 @@ import {
   FileSpreadsheet,
   Cloud,
   Sprout,
+  Table,
+  FileText,
+  Download,
 } from 'lucide-react';
 import { calculateCarbonV2, getSpeciesCategory } from '../utils/carbonMath';
 import { calculateGrowthPrognosis, SPECIES_GROWTH_PARAMS } from '../utils/growthModel';
@@ -134,6 +137,58 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
       }));
     }
   }, [session, addXp, addTokens]);
+
+  // ─── Seed data report (official 9-column format) ──────────────────────
+  // Generates a CSV export of the workbook seed data matching the official
+  // "বৃক্ষরোপণ ফরম" sheet's 9 columns: ক্রঃ নং, জেলা/উপজেলা/ইউনিয়ন/গ্রাম,
+  // প্রজাতির নাম, সংখ্যা, জিওগ্রাফিক্যাল কো-অর্ডিনেট, পরিচর্যাকারী,
+  // SAAO, মনিটরিং অফিসার, মন্তব্য.
+  const [reportExpanded, setReportExpanded] = useState(false);
+
+  const handleExportSeedReportCSV = useCallback(() => {
+    const headers = [
+      'ক্রঃ নং',
+      'জেলা, উপজেলা, ইউনিয়ন ও গ্রামের নাম',
+      'রোপণকৃত বৃক্ষের প্রজাতির নাম',
+      'রোপণকৃত বৃক্ষের সংখ্যা',
+      'বৃক্ষরোপণের সুনির্দিষ্ট এলাকা (জিওগ্রাফিক্যাল কো-অর্ডিনেট)',
+      'পরিচর্যাকারী কৃষকের নাম ও ফোন নম্বর',
+      'সংশ্লিষ্ট এসএএও-এর নাম ও ফোন নম্বর',
+      'মনিটরিং অফিসারের নাম ও ফোন নম্বর',
+      'মন্তব্য',
+    ];
+
+    const escapeCsv = (s: string | number) => {
+      const str = String(s ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const rows = SEED_PLANTATIONS.map((p) => [
+      p.sl,
+      `${p.district}, ${p.upazila}`,
+      p.speciesName,
+      p.count,
+      `${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}`,
+      p.caretaker,
+      p.saao,
+      p.monitoringOfficer,
+      `SL ${p.sl} · ${p.plantingDate}`,
+    ].map(escapeCsv).join(','));
+
+    const csv = '\uFEFF' + headers.map(escapeCsv).join(',') + '\n' + rows.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `seed-plantation-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
 
   // Fetch submissions from IndexedDB (V2 pipeline)
   const fetchSubmissions = useCallback(async () => {
@@ -664,6 +719,98 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                         )}
                       </div>
                     )}
+                  </div>
+
+                  {/* ─── Seed Data Report (official 9-column format) ─── */}
+                  <div className="flex flex-col gap-2 border-t-2 border-dashed border-emerald-200 pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-emerald-800 text-[11px] flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                        {language === 'bn' ? 'সিড ডেটা রিপোর্ট (ফরম্যাট অনুযায়ী)' : 'Seed Data Report (Official Format)'}
+                      </span>
+                      <button
+                        onClick={handleExportSeedReportCSV}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold transition-colors"
+                        title="CSV ডাউনলোড করুন"
+                      >
+                        <Download className="w-3 h-3" />
+                        CSV
+                      </button>
+                    </div>
+
+                    {/* Report format info */}
+                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-lg p-2 text-[9.5px] text-emerald-800 leading-relaxed">
+                      <div className="font-bold mb-0.5 flex items-center gap-1">
+                        <Table className="w-3 h-3" />
+                        {language === 'bn' ? 'সরকারি ৯-কলাম বিন্যাস' : 'Official 9-column format'}
+                      </div>
+                      <p>{language === 'bn'
+                        ? '"বৃক্ষরোপণ ফরম" শিট অনুযায়ী — DAE-তে ইমেইলের জন্য প্রস্তুত।'
+                        : 'Per "বৃক্ষরোপণ ফরম" sheet — ready for DAE email submission.'}</p>
+                    </div>
+
+                    {/* Collapsible report table */}
+                    <button
+                      onClick={() => setReportExpanded(!reportExpanded)}
+                      className="flex items-center justify-between w-full px-2 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-semibold text-slate-700 transition-colors"
+                    >
+                      <span className="flex items-center gap-1">
+                        <Table className="w-3 h-3 text-slate-500" />
+                        {reportExpanded
+                          ? (language === 'bn' ? 'রিপোর্ট সংকুচিত করুন' : 'Collapse report')
+                          : `${toBnNum(SEED_PLANTATIONS.length)} ${language === 'bn' ? 'টি এন্ট্রি দেখুন' : 'entries — expand'}`}
+                      </span>
+                      <span className="text-slate-400">{reportExpanded ? '▲' : '▼'}</span>
+                    </button>
+
+                    {reportExpanded && (
+                      <div className="overflow-x-auto rounded-lg border border-slate-200">
+                        <table className="w-full text-[9px]">
+                          <thead>
+                            <tr className="bg-emerald-700 text-white">
+                              <th className="p-1.5 text-left font-semibold whitespace-nowrap">ক্রঃ নং</th>
+                              <th className="p-1.5 text-left font-semibold">জেলা, উপজেলা</th>
+                              <th className="p-1.5 text-left font-semibold">প্রজাতির নাম</th>
+                              <th className="p-1.5 text-right font-semibold">সংখ্যা</th>
+                              <th className="p-1.5 text-left font-semibold">GPS কো-অর্ডিনেট</th>
+                              <th className="p-1.5 text-left font-semibold">পরিচর্যাকারী</th>
+                              <th className="p-1.5 text-left font-semibold">SAAO</th>
+                              <th className="p-1.5 text-left font-semibold">মনিটরিং অফিসার</th>
+                              <th className="p-1.5 text-left font-semibold">মন্তব্য</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {SEED_PLANTATIONS.map((p, i) => (
+                              <tr key={p.sl} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                <td className="p-1.5 border-t border-slate-100 font-mono font-bold text-slate-600">{toBnNum(p.sl)}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-700">{p.district}, {p.upazila}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-700 font-medium">{p.speciesName}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-right font-bold text-emerald-700">{toBnNum(p.count)}</td>
+                                <td className="p-1.5 border-t border-slate-100 font-mono text-[8px] text-slate-500 whitespace-nowrap">{p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-600 text-[8.5px]">{p.caretaker}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-600 text-[8.5px]">{p.saao}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-600 text-[8.5px]">{p.monitoringOfficer || '—'}</td>
+                                <td className="p-1.5 border-t border-slate-100 text-slate-500 text-[8px] whitespace-nowrap">{p.plantingDate}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-emerald-50 font-bold text-emerald-800">
+                              <td className="p-1.5" colSpan={3}>{language === 'bn' ? 'সর্বমোট' : 'Total'}</td>
+                              <td className="p-1.5 text-right">{toBnNum(SEED_STATS.totalSeedlings)}</td>
+                              <td className="p-1.5" colSpan={5}>{toBnNum(SEED_PLANTATIONS.length)} {language === 'bn' ? 'টি এন্ট্রি' : 'entries'}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Email submission hint */}
+                    <div className="text-[9px] text-slate-500 bg-slate-50 rounded px-2 py-1 border border-slate-100 leading-relaxed">
+                      📧 {language === 'bn'
+                        ? 'CSV ডাউনলোড করে admonitoring@dae.gov.bd বা ddimplement@dae.gov.bd-তে পাঠান।'
+                        : 'Download CSV and email to admonitoring@dae.gov.bd or ddimplement@dae.gov.bd.'}
+                    </div>
                   </div>
 
                   {/* Target progress */}
