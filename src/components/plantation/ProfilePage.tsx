@@ -5,6 +5,7 @@ import { getProfileCompleteness, getProfileTokenReward } from '../../lib/db';
 import { toBnNum } from '../../utils/mapHelper';
 import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck, Wifi, WifiOff, CircleDot, Copy, Check, HardDrive, HelpCircle, ChevronRight, Share2, Save, UserPlus, BadgeCheck, UserIcon, Download, Smartphone, MessageCircle } from 'lucide-react';
 import UserGuideModal from '../UserGuideModal';
+import ContributionReport from './ContributionReport';
 import { shareApp, shareViaWhatsApp } from '../../utils/shareApp';
 import { triggerPWAInstall, usePWAInstallState } from '../../utils/pwaInstall';
 import type { UserRole, ProfileRole } from '../../types';
@@ -610,6 +611,11 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
           </div>
         )}
       </section>
+
+      {/* Contribution, probable output, and filterable report —
+          brings the "My Data" view into the Profile tab so officers
+          don't have to jump between tabs to see their own impact. */}
+      <ContributionReport mobile={session?.profile?.mobile} />
 
       {/* In-app User Guide modal — opened from the "টিউটোরিয়াল" button */}
       <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
