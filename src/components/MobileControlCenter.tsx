@@ -26,15 +26,18 @@ import {
 import { GeoState } from './GeolocationIndicator';
 import { NetworkStatusData } from './NetworkStatus';
 import type { PlantationSubmission } from '../types/plantation';
+import { shareApp } from '../utils/shareApp';
 
 interface MobileControlCenterProps {
   networkState: NetworkStatusData | null;
   geoState: GeoState | null;
   submissions: PlantationSubmission[];
   userEmail: string;
+  /** Opens the real in-app UserGuideModal (shared with the header) instead of the legacy iframe-DOM hack. */
+  onOpenGuide?: () => void;
 }
 
-export default function MobileControlCenter({ networkState, geoState, submissions, userEmail }: MobileControlCenterProps) {
+export default function MobileControlCenter({ networkState, geoState, submissions, userEmail, onOpenGuide }: MobileControlCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'db' | 'net' | 'gps' | 'mydata'>('db');
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
@@ -120,9 +123,14 @@ export default function MobileControlCenter({ networkState, geoState, submission
   const hasGpsError = !!geoState?.error;
   const isOnline = networkState ? networkState.isOnline : true;
 
-  // Programmatic manual launcher
+  // Opens the shared UserGuideModal (preferred). Falls back to the legacy
+  // iframe-DOM trigger only if no onOpenGuide callback was supplied.
   const handleOpenUserGuide = () => {
     setIsOpen(false);
+    if (onOpenGuide) {
+      onOpenGuide();
+      return;
+    }
     setTimeout(() => {
       const guideBtn = document.getElementById('btnShowWelcomeHelp');
       if (guideBtn) {
@@ -223,7 +231,7 @@ export default function MobileControlCenter({ networkState, geoState, submission
   };
 
   return (
-    <div className="md:hidden block fixed top-3 right-3 z-50 pointer-events-none font-sans" id="mobileControlCenterLayout">
+    <div className="md:hidden block fixed top-[86px] right-3 z-50 pointer-events-none font-sans" id="mobileControlCenterLayout">
       <div className="flex flex-col items-end gap-2 pointer-events-auto">
         
         {/* Floating Toggle Hub FAB Button */}
@@ -271,40 +279,28 @@ export default function MobileControlCenter({ networkState, geoState, submission
           </span>
         </motion.button>
         
-        {/* Sharing Button */}
+        {/* Guide Button — opens the shared UserGuideModal */}
+        <button
+          onClick={handleOpenUserGuide}
+          className="p-2.5 bg-white text-gray-800 rounded-full shadow-lg border border-gray-150 cursor-pointer hover:bg-slate-50 transition-all flex items-center justify-center"
+          title={language === 'bn' ? 'ব্যবহার নির্দেশিকা' : 'User Guide'}
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Sharing Button — uses the shared shareApp() utility so behavior/content
+            stays consistent with the header's share button. */}
         <button
           onClick={() => {
-            const shareData = {
-              title: language === 'bn' ? 'বৃক্ষরোপণ ট্র্যাকার' : 'Plantation Tracker',
-              text: '৫ বছরে ২৫ কোটি বৃক্ষ রোপণ; জাতীয় মহা উদ্দ্যোগে সম্পৃক্ত হতে প্রয়োজনীয় তথ্য।',
-              url: 'https://kurigram-plantation-tracker.surge.sh/',
-            };
-            if (navigator.share) {
-              navigator.share(shareData).catch((err) => {
-                // If sharing was cancelled/aborted, do not fallback to clipboard copy or report errors
-                if (err.name === 'AbortError' || err.message?.toLowerCase().includes('cancel') || err.message?.toLowerCase().includes('abort')) {
-                  console.log('Sharing canceled or aborted by user.');
-                  return;
-                }
-                console.warn('Sharing failed, attempting clipboard fallback:', err);
-                navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
-                  setShareCopied(true);
-                  setTimeout(() => setShareCopied(false), 2000);
-                }).catch((clipErr) => {
-                  console.warn('Clipboard fallback also failed:', clipErr);
-                });
-              });
-            } else {
-              navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
+            shareApp().then((result) => {
+              if (result === 'copied') {
                 setShareCopied(true);
                 setTimeout(() => setShareCopied(false), 2000);
-              }).catch((clipErr) => {
-                console.warn('Clipboard copy failed:', clipErr);
-              });
-            }
+              }
+            });
           }}
           className="p-2.5 bg-white text-gray-800 rounded-full shadow-lg border border-gray-150 cursor-pointer hover:bg-slate-50 transition-all flex items-center justify-center relative"
-          title={language === 'bn' ? 'শেয়ার করুন' : 'Share'}
+          title={language === 'bn' ? 'শেয়ার করুন' : 'Share'}
         >
           {shareCopied ? (
             <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -313,7 +309,7 @@ export default function MobileControlCenter({ networkState, geoState, submission
           )}
           {shareCopied && (
             <span className="absolute -top-8 right-0 bg-slate-800 text-white text-[10px] py-1 px-2 rounded shadow-md whitespace-nowrap font-sans">
-              {language === 'bn' ? 'লিঙ্ক কপি করা হয়েছে!' : 'Link Copied!'}
+              {language === 'bn' ? 'লিঙ্ক কপি করা হয়েছে!' : 'Link Copied!'}
             </span>
           )}
         </button>
