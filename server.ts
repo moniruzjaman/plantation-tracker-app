@@ -493,12 +493,22 @@ async function startServer() {
               nurserySourceLongitude: draft.nurserySourceLongitude ?? null,
               synced: true,
               syncedAt: new Date(),
+              // VM0047 fields
+              trackingMethod: draft.trackingMethod || 'census',
+              treeSerial: draft.treeSerial || null,
+              vm0047HealthStatus: draft.vm0047HealthStatus || 'healthy',
+              geoPolygon: draft.geoPolygon || null,
+              modellingUnitId: draft.modellingUnitId || null,
+              sdgIncomeChange: draft.sdgIncomeChange || null,
+              sdgSoilHealth: draft.sdgSoilHealth || null,
+              biodiversityNote: draft.biodiversityNote || null,
               seedlings: {
                 create: (draft.seedlings || []).map((s: any) => ({
                   plantTypeId: s.plantTypeId || null,
                   speciesId: s.speciesId || null,
                   speciesName: s.speciesName || '',
                   count: parseInt(s.count) || 0,
+                  carbonFactor: s.carbonFactor ?? null,
                 })),
               },
               photos: {
@@ -510,6 +520,7 @@ async function startServer() {
                   latitude: p.latitude || 0,
                   longitude: p.longitude || 0,
                   distanceFromOriginMeters: p.distanceFromOriginMeters ?? null,
+                  photoType: p.photoType || null,
                 })),
               },
             },
@@ -776,6 +787,182 @@ async function startServer() {
     } catch (err: any) {
       console.error("GEE NDVI Error:", err);
       res.status(500).json({ error: err.message || "Failed to process NDVI analysis" });
+    }
+  });
+
+  // ─── POST /api/monitoring/revisit — VM0047 Monitoring Checkpoint ─────────
+  // Records a monitoring revisit with DBH, height, canopy, and health status.
+  app.post("/api/monitoring/revisit", async (req, res) => {
+    try {
+      const {
+        submissionId, stage, avgHeightM, avgDbhCm, avgCanopyRadiusM,
+        vm0047HealthStatus, survivalCount, deadCount,
+        latitude, longitude, accuracy,
+        sdgIncomeChange, sdgSoilHealth, biodiversityNote, remarks,
+      } = req.body;
+
+      if (!submissionId || !stage) {
+        res.status(400).json({ error: "submissionId and stage are required" });
+        return;
+      }
+
+      const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
+      if (!submission) {
+        res.status(404).json({ error: "Submission not found" });
+        return;
+      }
+
+      const monitoring = await prisma.monitoring.create({
+        data: {
+          submissionId,
+          stage: stage || 'month_6',
+          avgHeightM: avgHeightM ?? null,
+          avgDbhCm: avgDbhCm ?? null,
+          avgCanopyRadiusM: avgCanopyRadiusM ?? null,
+          vm0047HealthStatus: vm0047HealthStatus || 'healthy',
+          survivalCount: survivalCount ?? null,
+          deadCount: deadCount ?? null,
+          latitude: latitude || 0,
+          longitude: longitude || 0,
+          accuracy: accuracy || 0,
+          sdgIncomeChange: sdgIncomeChange || null,
+          sdgSoilHealth: sdgSoilHealth || null,
+          biodiversityNote: biodiversityNote || null,
+          remarks: remarks || null,
+        },
+      });
+
+      // Update the parent submission's health status
+      await prisma.submission.update({
+        where: { id: submissionId },
+        data: { vm0047HealthStatus: vm0047HealthStatus || 'healthy' },
+      });
+
+      res.json({ status: "success", data: monitoring });
+    } catch (err: any) {
+      console.error("[Monitoring Revisit] Error:", err);
+      res.status(500).json({ error: err.message || "Failed to record monitoring revisit" });
+    }
+  });
+
+  // ─── GET /api/monitoring/:submissionId — Get monitoring history ──────────
+  app.get("/api/monitoring/:submissionId", async (req, res) => {
+    try {
+      const monitorings = await prisma.monitoring.findMany({
+        where: { submissionId: req.params.submissionId },
+        orderBy: { monitoredAt: 'asc' },
+      });
+      res.json({ status: "success", data: monitorings });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── GET /api/audit/carbon-stock — VM0047 Carbon Stock Report ────────────
+  app.get("/api/audit/carbon-stock", async (_req, res) => {
+    try {
+      const submissions = await prisma.submission.findMany({
+        where: { synced: true },
+        include: {
+          seedlings: true,
+          monitorings: { orderBy: { monitoredAt: 'desc' }, take: 1 },
+        },
+      });
+
+      // Aggregate carbon stats per district
+      const districtCarbon: Record<string, {
+        totalSeedlings: number;
+        submissionsCount: number;
+        healthyCount: number;
+        stressedCount: number;
+        deadCount: number;
+      }> = {};
+
+      for (const sub of submissions) {
+        const district = sub.district || 'অজানা';
+        if (!districtCarbon[district]) {
+          districtCarbon[district] = { totalSeedlings: 0, submissionsCount: 0, healthyCount: 0, stressedCount: 0, deadCount: 0 };
+        }
+        const dc = districtCarbon[district];
+        dc.submissionsCount++;
+        const seedCount = sub.seedlings?.reduce((sum: number, s: any) => sum + (s.count || 0), 0) || 0;
+        dc.totalSeedlings += seedCount;
+
+        const health = sub.vm0047HealthStatus || 'healthy';
+        if (health === 'healthy') dc.healthyCount++;
+        else if (health === 'stressed') dc.stressedCount++;
+        else if (health === 'dead') dc.deadCount++;
+      }
+
+      const totalSubmissions = submissions.length;
+      const totalSeedlings = submissions.reduce(
+        (sum, s) => sum + (s.seedlings?.reduce((a: number, b: any) => a + (b.count || 0), 0) || 0), 0
+      );
+      const healthSummary = {
+        healthy: submissions.filter(s => (s.vm0047HealthStatus || 'healthy') === 'healthy').length,
+        stressed: submissions.filter(s => s.vm0047HealthStatus === 'stressed').length,
+        dead: submissions.filter(s => s.vm0047HealthStatus === 'dead').length,
+      };
+
+      res.json({
+        status: "success",
+        methodology: "VM0047_v1.1",
+        report: {
+          totalSubmissions,
+          totalSeedlings,
+          healthSummary,
+          districts: Object.entries(districtCarbon).map(([name, data]) => ({ name, ...data })),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── GET /api/audit/export-geojson — GeoJSON export for external tools ───
+  app.get("/api/audit/export-geojson", async (_req, res) => {
+    try {
+      const submissions = await prisma.submission.findMany({
+        where: { latitude: { not: 0 }, longitude: { not: 0 }, synced: true },
+        select: {
+          id: true, clientUid: true, district: true, upazila: true,
+          latitude: true, longitude: true, plantationDate: true,
+          vm0047HealthStatus: true, trackingMethod: true, treeSerial: true,
+          seedlings: { select: { speciesName: true, count: true } },
+        },
+      });
+
+      const features = submissions.map(s => ({
+        type: "Feature" as const,
+        geometry: {
+          type: "Point" as const,
+          coordinates: [s.longitude, s.latitude],
+        },
+        properties: {
+          id: s.clientUid,
+          district: s.district,
+          upazila: s.upazila,
+          plantationDate: s.plantationDate,
+          healthStatus: s.vm0047HealthStatus,
+          trackingMethod: s.trackingMethod,
+          treeSerial: s.treeSerial,
+          seedlings: s.seedlings,
+        },
+      }));
+
+      const geojson = {
+        type: "FeatureCollection" as const,
+        features,
+        metadata: {
+          source: "Plantation Tracker VM0047",
+          generatedAt: new Date().toISOString(),
+          featureCount: features.length,
+        },
+      };
+
+      res.json(geojson);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

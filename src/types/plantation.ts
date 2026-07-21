@@ -80,6 +80,10 @@ export interface Species {
   plantTypeId: string; // -> PlantType.id
   scientificName?: string;
   pending?: boolean;
+  /** IPCC Tier 2 carbon conversion factor (biomass carbon fraction, 0-1).
+   *  Derived from wood density × biomass expansion factor × carbon fraction.
+   *  Used by carbonStock.ts for VM0047-compliant carbon stock calculation. */
+  carbonFactor?: number;
 }
 
 // ---------- Photo evidence & growth checkpoints ----------
@@ -89,6 +93,15 @@ export interface Species {
 // so a photo can't be substituted from an unrelated site later.
 
 export type CheckpointStage = 'planting' | 'month_6' | 'year_1' | 'year_2' | 'year_3';
+
+/** VM0047 v1.1 health classification (3-tier) */
+export type VM0047HealthStatus = 'healthy' | 'stressed' | 'dead';
+
+/** VM0047 tracking methodology */
+export type TrackingMethod = 'census' | 'area';
+
+/** VM0047-compliant photo types for evidence protocol */
+export type PhotoType = 'qr_closeup' | 'full_tree' | 'context' | 'general';
 
 export interface PhotoRecord {
   id: string;
@@ -101,6 +114,9 @@ export interface PhotoRecord {
   latitude: number;
   longitude: number;
   distanceFromOriginMeters?: number; // computed at capture time, flagged if > ~15m
+  /** VM0047 photo type: qr_closeup = QR tag close-up, full_tree = entire tree,
+   *  context = surrounding farm/landscape, general = legacy photos (pre-standard). */
+  photoType?: PhotoType;
 }
 
 // ---------- Submission entry ----------
@@ -201,6 +217,35 @@ export interface PlantationSubmission {
   nurserySourceLatitude?: number;
   nurserySourceLongitude?: number;
 
+  // ---- VM0047 / Gold Standard Fields (all optional — zero impact on existing flow) ----
+
+  /** Tracking methodology: 'census' (individual tree GPS) or 'area' (polygon boundary). */
+  trackingMethod?: TrackingMethod;
+
+  /** Unique tree serial for census-based tracking (e.g. "BD-TREE-100024").
+   *  For area-based submissions this stays null — the parcel_id/polygon identifies the site. */
+  treeSerial?: string;
+
+  /** VM0047 3-tier health status. Updated at each monitoring revisit. */
+  vm0047HealthStatus?: VM0047HealthStatus;
+
+  /** GeoJSON polygon string for area-based tracking.
+   *  Stored as text in IndexedDB/SQLite; as GEOMETRY(Polygon,4326) in PostGIS. */
+  geoPolygon?: string;
+
+  /** Auto-generated modelling unit key for Gold Standard carbon grouping.
+   *  Format: district::YYYY-MM::entryMode::speciesSignature */
+  modellingUnitId?: string;
+
+  /** SDG 1 co-benefit: caretaker income change observation. */
+  sdgIncomeChange?: string;
+
+  /** SDG 15 co-benefit: soil health improvement observation. */
+  sdgSoilHealth?: string;
+
+  /** SDG 15 co-benefit: biodiversity restoration notes (e.g. bird species sighted). */
+  biodiversityNote?: string;
+
   timestamp: string;
   synced: boolean;
 }
@@ -233,6 +278,8 @@ export function createEmptySubmission(mode: EntryMode): PlantationSubmission {
     monitoringOfficerName: '',
     monitoringOfficerMobile: '',
     photos: [],
+    trackingMethod: 'census',
+    vm0047HealthStatus: 'healthy',
     timestamp: new Date().toISOString(),
     synced: false,
   };

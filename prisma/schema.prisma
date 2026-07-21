@@ -8,11 +8,15 @@
 //   Submission   — one per field-visit / form submit (parent)
 //   Seedling     — repeatable species rows per submission (child 1:N)
 //   Photo        — geo-verified evidence trail (child 1:N)
+//   Monitoring   — revisit measurements per submission (child 1:N) [NEW]
 //   UserProfile  — Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts
 //   SeedSync     — Tracks when the workbook seed data was last pushed to DB
 //
-// For production, change the provider to "postgresql" and update
-// DATABASE_URL in .env — the schema is provider-agnostic.
+// Provider is SQLite for development. For production with PostGIS:
+//   1. Change provider to "postgresql"
+//   2. Update DATABASE_URL in .env
+//   3. Run: npx prisma migrate deploy
+//   4. Add spatial extensions: CREATE EXTENSION IF NOT EXISTS postgis;
 // =============================================================================
 
 generator client {
@@ -75,20 +79,34 @@ model Submission {
   nurserySourceLatitude  Float?
   nurserySourceLongitude Float?
 
+  // ─── VM0047 / Gold Standard Fields ───
+  trackingMethod      String   @default("census")   // "census" | "area"
+  treeSerial          String?                       // e.g. "BD-TREE-100024"
+  vm0047HealthStatus  String   @default("healthy")  // "healthy" | "stressed" | "dead"
+  geoPolygon          String?                       // GeoJSON polygon (text; real geometry in PostGIS)
+  modellingUnitId     String?                       // Gold Standard carbon grouping key
+  sdgIncomeChange     String?                       // SDG 1: income change
+  sdgSoilHealth       String?                       // SDG 15: soil health
+  biodiversityNote    String?                       // SDG 15: biodiversity
+
   synced   Boolean  @default(true)
   syncedAt DateTime @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  seedlings Seedling[]
-  photos    Photo[]
+  seedlings   Seedling[]
+  photos      Photo[]
+  monitorings Monitoring[]
 
   @@index([district])
   @@index([upazila])
   @@index([synced])
   @@index([createdAt])
   @@index([plantationDate])
+  @@index([vm0047HealthStatus])
+  @@index([trackingMethod])
+  @@index([modellingUnitId])
 }
 
 // ─── Seedling entries (report columns 7–8, repeatable per submission) ──────
@@ -102,6 +120,9 @@ model Seedling {
   speciesId   String?
   speciesName String
   count       Int    @default(0)
+
+  // VM0047 carbon factor (IPCC Tier 2)
+  carbonFactor Float?
 
   @@index([submissionId])
   @@index([speciesName])
@@ -122,8 +143,51 @@ model Photo {
   longitude               Float   @default(0)
   distanceFromOriginMeters Float?
 
+  // VM0047 photo type
+  photoType               String? // "qr_closeup" | "full_tree" | "context" | "general"
+
   @@index([submissionId])
   @@index([stage])
+  @@index([photoType])
+}
+
+// ─── Monitoring Revisits (NEW — VM0047 5-year checkpoint data) ─────────────
+// One row per monitoring visit per submission.
+// Stores DBH, height, canopy measurements for carbon stock calculation.
+
+model Monitoring {
+  id              String   @id @default(cuid())
+  submissionId    String
+  submission      Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  stage           String   @default("month_6") // "month_6" | "year_1" | "year_2" | "year_3"
+  monitoredAt     DateTime @default(now())
+
+  // Field measurements (averaged across sampled trees in the submission)
+  avgHeightM      Float?   // Average tree height in meters
+  avgDbhCm        Float?   // Average Diameter at Breast Height in cm
+  avgCanopyRadiusM Float?  // Average canopy radius in meters
+
+  // Health assessment
+  vm0047HealthStatus String @default("healthy") // "healthy" | "stressed" | "dead"
+  survivalCount    Int?    // Number of surviving trees observed
+  deadCount        Int?    // Number of dead trees observed
+
+  // Monitoring officer GPS
+  latitude        Float    @default(0)
+  longitude       Float    @default(0)
+  accuracy        Float    @default(0)
+
+  // SDG co-benefit observations
+  sdgIncomeChange String?
+  sdgSoilHealth   String?
+  biodiversityNote String?
+
+  remarks         String?
+
+  @@index([submissionId])
+  @@index([stage])
+  @@index([vm0047HealthStatus])
 }
 
 // ─── User Profile ───────────────────────────────────────────────────────────

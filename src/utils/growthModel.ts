@@ -240,6 +240,8 @@ export interface HealthPrognosis {
   expectedCanopyRadiusMeters: number;
   survivalProbabilityPercent: number;
   healthStatus: 'excellent' | 'good' | 'fair' | 'critical';
+  /** VM0047 v1.1 3-tier health classification */
+  vm0047HealthStatus: 'healthy' | 'stressed' | 'dead';
   monthsElapsed: number;
   advisoryBn: string;
   advisoryEn: string;
@@ -563,11 +565,18 @@ export function calculateGrowthPrognosis(
     advisoryEn += ' This is a drought-hardy species. Avoid waterlogging as it may cause root rot. Water only when topsoil is completely dry.';
   }
 
+  // VM0047 3-tier health mapping
+  const vm0047HealthStatus: 'healthy' | 'stressed' | 'dead' =
+    healthStatus === 'excellent' || healthStatus === 'good' ? 'healthy'
+    : healthStatus === 'fair' ? 'stressed'
+    : 'dead';
+
   return {
     expectedHeightMeters: parseFloat(expectedHeight.toFixed(2)),
     expectedCanopyRadiusMeters: parseFloat(expectedCanopy.toFixed(2)),
     survivalProbabilityPercent: survivalProbability,
     healthStatus,
+    vm0047HealthStatus,
     monthsElapsed,
     advisoryBn,
     advisoryEn,

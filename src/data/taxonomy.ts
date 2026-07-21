@@ -12,6 +12,8 @@
  * Approval is intentionally not wired to a UI yet — that's an
  * officer/admin-role screen for a later pass. For now `approveSpecies` /
  * `approvePlantType` exist so that pass has something to call.
+ *
+ * v2: Added `carbonFactor` (IPCC Tier 2) for VM0047 carbon stock calculation.
  */
 
 import type { PlantType, Species } from '../types/plantation';
@@ -25,29 +27,29 @@ export const PLANT_TYPES: PlantType[] = [
 ];
 
 export const SPECIES: Species[] = [
-  // বনজ
-  { id: 'mehogoni', name: 'মেহগনি', plantTypeId: 'forest', scientificName: 'Swietenia macrophylla' },
-  { id: 'akashmoni', name: 'আকাশমণি', plantTypeId: 'forest', scientificName: 'Acacia auriculiformis' },
-  { id: 'segun', name: 'সেগুন', plantTypeId: 'forest', scientificName: 'Tectona grandis' },
-  { id: 'shishu', name: 'শিশু', plantTypeId: 'forest', scientificName: 'Dalbergia sissoo' },
-  { id: 'raintree', name: 'রেইনট্রি', plantTypeId: 'forest', scientificName: 'Samanea saman' },
+  // বনজ (Forest)
+  { id: 'mehogoni', name: 'মেহগনি', plantTypeId: 'forest', scientificName: 'Swietenia macrophylla', carbonFactor: 0.50 },
+  { id: 'akashmoni', name: 'আকাশমণি', plantTypeId: 'forest', scientificName: 'Acacia auriculiformis', carbonFactor: 0.45 },
+  { id: 'segun', name: 'সেগুন', plantTypeId: 'forest', scientificName: 'Tectona grandis', carbonFactor: 0.48 },
+  { id: 'shishu', name: 'শিশু', plantTypeId: 'forest', scientificName: 'Dalbergia sissoo', carbonFactor: 0.52 },
+  { id: 'raintree', name: 'রেইনট্রি', plantTypeId: 'forest', scientificName: 'Samanea saman', carbonFactor: 0.42 },
 
-  // ফলদ
-  { id: 'mango', name: 'আম', plantTypeId: 'fruit', scientificName: 'Mangifera indica' },
-  { id: 'jackfruit', name: 'কাঁঠাল', plantTypeId: 'fruit', scientificName: 'Artocarpus heterophyllus' },
-  { id: 'litchi', name: 'লিচু', plantTypeId: 'fruit', scientificName: 'Litchi chinensis' },
-  { id: 'guava', name: 'পেয়ারা', plantTypeId: 'fruit', scientificName: 'Psidium guajava' },
-  { id: 'coconut', name: 'নারিকেল', plantTypeId: 'fruit', scientificName: 'Cocos nucifera' },
+  // ফলদ (Fruit)
+  { id: 'mango', name: 'আম', plantTypeId: 'fruit', scientificName: 'Mangifera indica', carbonFactor: 0.42 },
+  { id: 'jackfruit', name: 'কাঁঠাল', plantTypeId: 'fruit', scientificName: 'Artocarpus heterophyllus', carbonFactor: 0.44 },
+  { id: 'litchi', name: 'লিচু', plantTypeId: 'fruit', scientificName: 'Litchi chinensis', carbonFactor: 0.40 },
+  { id: 'guava', name: 'পেয়ারা', plantTypeId: 'fruit', scientificName: 'Psidium guajava', carbonFactor: 0.46 },
+  { id: 'coconut', name: 'নারিকেল', plantTypeId: 'fruit', scientificName: 'Cocos nucifera', carbonFactor: 0.38 },
 
-  // ঔষধি
-  { id: 'neem', name: 'নিম', plantTypeId: 'medicinal', scientificName: 'Azadirachta indica' },
-  { id: 'aloe', name: 'ঘৃতকুমারী', plantTypeId: 'medicinal', scientificName: 'Aloe vera' },
+  // ঔষধি (Medicinal)
+  { id: 'neem', name: 'নিম', plantTypeId: 'medicinal', scientificName: 'Azadirachta indica', carbonFactor: 0.51 },
+  { id: 'aloe', name: 'ঘৃতকুমারী', plantTypeId: 'medicinal', scientificName: 'Aloe vera', carbonFactor: 0.15 },
 
-  // শোভাবর্ধনকারী
-  { id: 'krishnachura', name: 'কৃষ্ণচূড়া', plantTypeId: 'ornamental', scientificName: 'Delonix regia' },
+  // শোভাবর্ধনকারী (Ornamental)
+  { id: 'krishnachura', name: 'কৃষ্ণচূড়া', plantTypeId: 'ornamental', scientificName: 'Delonix regia', carbonFactor: 0.43 },
 
-  // বাঁশ/বেত
-  { id: 'bamboo', name: 'বাঁশ', plantTypeId: 'bamboo_cane', scientificName: 'Bambusoideae' },
+  // বাঁশ/বেত (Bamboo/Cane)
+  { id: 'bamboo', name: 'বাঁশ', plantTypeId: 'bamboo_cane', scientificName: 'Bambusoideae', carbonFactor: 0.47 },
 ];
 
 // ---------- Pending-entry queue ----------
@@ -85,4 +87,10 @@ export function approveSpecies(id: string): void {
 
 export function getSpeciesByPlantType(plantTypeId: string): Species[] {
   return SPECIES.filter((s) => s.plantTypeId === plantTypeId);
+}
+
+/** Look up a species' carbon factor by Bengali name. Falls back to 0.47. */
+export function getSpeciesCarbonFactor(speciesName: string): number {
+  const sp = SPECIES.find(s => s.name === speciesName);
+  return sp?.carbonFactor ?? 0.47;
 }
