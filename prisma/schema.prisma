@@ -9,6 +9,8 @@
 //   Seedling     — repeatable species rows per submission (child 1:N)
 //   Photo        — geo-verified evidence trail (child 1:N)
 //   Monitoring   — revisit measurements per submission (child 1:N) [NEW]
+//   UserProfile  — Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts
+//   SeedSync     — Tracks when the workbook seed data was last pushed to DB
 //
 // Provider is SQLite for development. For production with PostGIS:
 //   1. Change provider to "postgresql"
@@ -186,4 +188,73 @@ model Monitoring {
   @@index([submissionId])
   @@index([stage])
   @@index([vm0047HealthStatus])
+}
+
+// ─── User Profile ───────────────────────────────────────────────────────────
+// Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts.
+//
+// Bootstrap flow:
+//   1. App install first time → fetches /api/auth/bootstrap (returns allow-list)
+//   2. If the device's email (or user-entered email) matches an allow-list
+//      entry → auto-creates a UserProfile row with the allow-list's role/name/
+//      mobile/designation pre-populated.
+//   3. If no match → user starts as 'citizen'. Name + Mobile are required
+//      before any form submission (mandatory fields).
+//   4. Optional fields (NID, JobID, designation, district, upazila) unlock
+//      token-boost rewards via profileCompletionBonus.
+//
+// Idempotent upsert by `email` (unique). The allow-list lives in
+// seed/admins.json so it can be updated without a migration.
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String   @default("")
+  mobile    String   @default("")
+
+  // Role hierarchy: citizen < officer (SAAO) < cadre (monitoring officer) < admin
+  role      String   @default("citizen")   // 'citizen' | 'officer' | 'cadre' | 'admin'
+
+  // Optional identity fields — enhance token rewards when filled
+  nid             String?   // National ID (10/13/17-digit BD format)
+  jobId           String?   // DAE job ID (e.g. SAAO-12345)
+  designation     String?   // 'SAAO' | 'UAO' | 'AEO' | 'AAO' | 'DDA' | 'Deputy Project Director'
+  district        String?
+  upazila         String?
+  blockId         String?
+  photoUrl        String?
+
+  // Gamification state (mirrored from IndexedDB client-side)
+  xp                      Int      @default(0)
+  greenTokens             Int      @default(0)
+  streakCount             Int      @default(0)
+  profileCompletionBonus  Boolean  @default(false)
+
+  // Bootstrap traceability
+  bootstrapSource  String?  // 'allow-list' | 'manual' | 'admin-invite'
+  invitedBy        String?  // email of the admin who invited (nullable for self-registered)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([district])
+  @@index([upazila])
+}
+
+// ─── Seed Sync Tracking ─────────────────────────────────────────────────────
+// Records each bulk-upsert of the workbook's "process data" sheet into the
+// Submission table. Used by the Dashboard "Sync Seed Data" button to show
+// the last sync time + record count + source workbook hash.
+
+model SeedSync {
+  id              String   @id @default(cuid())
+  syncedAt        DateTime @default(now())
+  recordCount     Int
+  sourceFileName  String   @default("Tree_Plantation_Reporting_Workbook.xlsx")
+  sourceFileHash  String   @default("")   // SHA-256 of the workbook file
+  syncedByEmail   String?                 // which admin triggered the sync
+  notes           String?
+
+  @@index([syncedAt])
 }

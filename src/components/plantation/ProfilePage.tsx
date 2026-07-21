@@ -3,7 +3,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { getTokenHistory } from '../../utils/tokenHistory';
 import { getProfileCompleteness, getProfileTokenReward } from '../../lib/db';
 import { toBnNum } from '../../utils/mapHelper';
-import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck, Wifi, WifiOff, CircleDot, Copy, Check, HardDrive, HelpCircle, ChevronRight, Share2, Save, UserPlus, BadgeCheck, UserIcon } from 'lucide-react';
+import { Sprout, Flame, Coins, Award, MapPin, IdCard, ShieldCheck, Wifi, WifiOff, CircleDot, Copy, Check, HardDrive, HelpCircle, ChevronRight, Share2, Save, UserPlus, BadgeCheck, UserIcon, Download, Smartphone, MessageCircle } from 'lucide-react';
+import UserGuideModal from '../UserGuideModal';
+import ContributionReport from './ContributionReport';
+import { shareApp, shareViaWhatsApp } from '../../utils/shareApp';
+import { triggerPWAInstall, usePWAInstallState } from '../../utils/pwaInstall';
 import type { UserRole, ProfileRole } from '../../types';
 import type { GeoState } from '../GeolocationIndicator';
 import type { NetworkStatusData } from '../NetworkStatus';
@@ -58,6 +62,9 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
   const [regUpazila, setRegUpazila] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [installStatus, setInstallStatus] = useState<'idle' | 'installing' | 'installed' | 'failed'>('idle');
+  const { canInstall, isInstalled } = usePWAInstallState();
 
   // Pre-fill from existing profile when editing
   useEffect(() => {
@@ -103,31 +110,33 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
     }
   };
 
-  const handleShare = () => {
-    const shareData = {
-      title: 'বৃক্ষরোপণ ট্র্যাকার',
-      text: '৫ বছরে ২৫ কোটি বৃক্ষ রোপণ; জাতীয় মহা উদ্দ্যোগে সম্পৃক্ত হতে প্রয়োজনীয় তথ্য।',
-      url: 'https://kurigram-plantation-tracker.surge.sh/',
-    };
-    if (navigator.share) {
-      navigator.share(shareData).catch((err) => {
-        if (err.name === 'AbortError' || err.message?.toLowerCase().includes('cancel')) return;
-        navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
-          setShareCopied(true);
-          setTimeout(() => setShareCopied(false), 2000);
-        }).catch(() => {});
-      });
+  const handleShare = async () => {
+    const result = await shareApp();
+    if (result === 'copied') {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    shareViaWhatsApp();
+  };
+
+  const handleInstall = async () => {
+    setInstallStatus('installing');
+    const outcome = await triggerPWAInstall();
+    if (outcome === 'accepted') {
+      setInstallStatus('installed');
+    } else if (outcome === 'unavailable') {
+      setInstallStatus('failed');
+      setTimeout(() => setInstallStatus('idle'), 3000);
     } else {
-      navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`).then(() => {
-        setShareCopied(true);
-        setTimeout(() => setShareCopied(false), 2000);
-      }).catch(() => {});
+      setInstallStatus('idle');
     }
   };
 
   const handleOpenUserGuide = () => {
-    const guideBtn = document.getElementById('btnShowWelcomeHelp');
-    if (guideBtn) guideBtn.click();
+    setGuideOpen(true);
   };
 
   const handleRegister = async () => {
@@ -495,7 +504,7 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
         </div>
       </section>
 
-      {/* Tutorial + Share */}
+      {/* Tutorial + Install + Share */}
       <section className="bg-white rounded-xl p-4 shadow-sm space-y-2.5">
         <div className="flex items-center justify-between bg-emerald-50/30 border border-emerald-100/40 p-2.5 rounded-xl">
           <div className="flex flex-col gap-0.5">
@@ -511,13 +520,74 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
             টিউটোরিয়াল <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
-        <button
-          onClick={handleShare}
-          className="w-full flex items-center justify-center gap-2 py-2 bg-slate-50 text-slate-700 rounded-lg text-xs font-bold border border-slate-100 hover:bg-slate-100 transition-colors"
-        >
-          {shareCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
-          {shareCopied ? 'লিঙ্ক কপি করা হয়েছে!' : 'অ্যাপটি শেয়ার করুন'}
-        </button>
+
+        {/* Install App button — only shown when not yet installed */}
+        {!isInstalled && (
+          <button
+            onClick={handleInstall}
+            disabled={installStatus === 'installing'}
+            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all ${
+              installStatus === 'installed'
+                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                : installStatus === 'failed'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                  : canInstall
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 shadow-md'
+                    : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            {installStatus === 'installing' ? (
+              <>
+                <Download className="w-3.5 h-3.5 animate-bounce" />
+                ইনস্টল হচ্ছে...
+              </>
+            ) : installStatus === 'installed' ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                অ্যাপ ইনস্টল হয়েছে!
+              </>
+            ) : installStatus === 'failed' ? (
+              <>
+                <Smartphone className="w-3.5 h-3.5" />
+                ব্রাউজার মেনু থেকে ইনস্টল করুন
+              </>
+            ) : canInstall ? (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                অ্যাপ ইনস্টল করুন
+              </>
+            ) : (
+              <>
+                <Smartphone className="w-3.5 h-3.5" />
+                মোবাইলে ইনস্টল করুন
+              </>
+            )}
+          </button>
+        )}
+        {isInstalled && (
+          <div className="flex items-center justify-center gap-1.5 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-semibold border border-emerald-100">
+            <Check className="w-3.5 h-3.5" />
+            অ্যাপ ইনস্টল করা আছে
+          </div>
+        )}
+
+        {/* Share buttons — Web Share + WhatsApp */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleShare}
+            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 text-slate-700 rounded-lg text-[11px] font-bold border border-slate-100 hover:bg-slate-100 transition-colors"
+          >
+            {shareCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
+            {shareCopied ? 'কপি হয়েছে!' : 'শেয়ার করুন'}
+          </button>
+          <button
+            onClick={handleWhatsAppShare}
+            className="flex items-center justify-center gap-1.5 py-2 bg-[#25D366]/10 text-[#128C7E] rounded-lg text-[11px] font-bold border border-[#25D366]/20 hover:bg-[#25D366]/20 transition-colors"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            WhatsApp
+          </button>
+        </div>
       </section>
 
       {/* Recent activity */}
@@ -541,6 +611,14 @@ export default function ProfilePage({ networkState, geoState }: ProfilePageProps
           </div>
         )}
       </section>
+
+      {/* Contribution, probable output, and filterable report —
+          brings the "My Data" view into the Profile tab so officers
+          don't have to jump between tabs to see their own impact. */}
+      <ContributionReport mobile={session?.profile?.mobile} />
+
+      {/* In-app User Guide modal — opened from the "টিউটোরিয়াল" button */}
+      <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }

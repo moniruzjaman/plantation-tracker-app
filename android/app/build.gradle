@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+def envKeystorePath = System.getenv("RELEASE_KEYSTORE_PATH")
+def envKeystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+def envKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
+def envKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+def hasReleaseSigning = envKeystorePath && envKeystorePassword && envKeyAlias && envKeyPassword
+
+if (!hasReleaseSigning) {
+    logger.lifecycle("[release-signing] RELEASE_KEYSTORE_PATH, RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD env vars required for signed release builds")
+}
+
 android {
     namespace = "com.nursery.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,7 +17,7 @@ android {
         applicationId "com.nursery.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        versionCode System.getenv("RELEASE_VERSION_CODE")?.toInteger() ?: 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -16,10 +26,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(envKeystorePath)
+                storePassword envKeystorePassword
+                keyAlias envKeyAlias
+                keyPassword envKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

@@ -15,19 +15,27 @@ import AIAssistant from './components/AIAssistant';
 import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
 import ProfilePage from './components/plantation/ProfilePage';
-import { saveSubmission } from './utils/submissionStore';
+import { saveSubmission, getSubmissions } from './utils/submissionStore';
 import { getSubmissionReward } from './lib/db';
 import { useAuth } from './hooks/useAuth';
 import type { PlantationSubmission } from './types/plantation';
+import UserGuideModal from './components/UserGuideModal';
+import MobileControlCenter from './components/MobileControlCenter';
+import { shareApp, shareViaWhatsApp, getDefaultSharePayload } from './utils/shareApp';
 import { 
   Sparkles, 
   ClipboardList, 
   LayoutDashboard, 
   Map as MapIcon, 
-  Sprout,
   UserCircle,
   Menu,
-  X
+  X,
+  Share2,
+  BookOpen,
+  MessageCircle,
+  Link as LinkIcon,
+  Facebook,
+  Send as TelegramIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Coins, Star } from 'lucide-react';
@@ -54,9 +62,52 @@ export default function App() {
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
   const [currentTab, setCurrentTab] = useState<TabId>('form');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [sharePopoverOpen, setSharePopoverOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [rewardToast, setRewardToast] = useState<{ xp: number; tokens: number; breakdown: { label: string; xp: number; tokens: number }[] } | null>(null);
-  const { addXp, addTokens } = useAuth();
+  const [mcSubmissions, setMcSubmissions] = useState<PlantationSubmission[]>([]);
+  const { addXp, addTokens, session } = useAuth();
   const offlineQueue = useOfflineQueue();
+
+  // Keep the floating status hub's submission stats fresh.
+  const refreshMcSubmissions = useCallback(() => {
+    getSubmissions().then(setMcSubmissions).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshMcSubmissions();
+  }, [refreshMcSubmissions]);
+
+  const handleHeaderShare = useCallback(async () => {
+    const result = await shareApp();
+    if (result === 'copied') {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    }
+    if (result === 'shared' || result === 'copied') {
+      setSharePopoverOpen(false);
+    }
+  }, []);
+
+  const handleHeaderCopyLink = useCallback(() => {
+    const { url } = getDefaultSharePayload();
+    navigator.clipboard?.writeText(url).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    }).catch(() => {});
+  }, []);
+
+  const handleHeaderFacebookShare = useCallback(() => {
+    const { url } = getDefaultSharePayload();
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  const handleHeaderTelegramShare = useCallback(() => {
+    const { url, text } = getDefaultSharePayload();
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  }, []);
+
 
   // Ref to notify MapTab to invalidateSize
   const mapInvalidateRef = useRef<(() => void) | null>(null);
@@ -179,6 +230,7 @@ export default function App() {
 
   const handlePlantationSubmit = (submission: PlantationSubmission) => {
     saveSubmission(submission);
+    refreshMcSubmissions();
 
     // Award tokens & XP based on data richness
     const reward = getSubmissionReward(submission);
@@ -203,6 +255,13 @@ export default function App() {
       <WelcomeModal />
       <PWAInstaller />
       <SyncToast />
+      <MobileControlCenter
+        networkState={networkState}
+        geoState={geoState}
+        submissions={mcSubmissions}
+        userEmail={session?.profile?.mobile || 'guest@dae.gov.bd'}
+        onOpenGuide={() => setGuideOpen(true)}
+      />
 
       {/* ======= SUBMISSION REWARD TOAST ======= */}
       <AnimatePresence>
@@ -251,8 +310,12 @@ export default function App() {
       </AnimatePresence>
 
       {/* ======= TOP HEADER ======= */}
-      <header className="flex-shrink-0 bg-gradient-to-r from-emerald-800 to-teal-850 text-white shadow-md relative no-print" style={{ zIndex: 30 }}>
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-12 sm:h-14 md:h-16 flex items-center justify-between">
+      <header className="flex-shrink-0 bg-gradient-to-r from-green-900 via-green-800 to-emerald-950 text-white shadow-md relative no-print overflow-visible" style={{ zIndex: 30 }}>
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'radial-gradient(circle at 92% -30%, rgba(220,38,38,.35) 0%, rgba(220,38,38,0) 55%)' }}
+        />
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-12 sm:h-14 md:h-16 flex items-center justify-between relative">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             {/* Hamburger menu for mobile + tablet (below md) */}
             <button
@@ -262,9 +325,12 @@ export default function App() {
             >
               {mobileDrawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <div className="p-1 sm:p-1.5 bg-emerald-700/50 rounded-xl border border-emerald-500/30 shadow-inner flex items-center justify-center flex-shrink-0">
-              <Sprout className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-300 animate-pulse" />
-            </div>
+            <img
+              src="/bd-logo.svg"
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/bd-logo.png'; }}
+              alt="বাংলাদেশ সরকার"
+              className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full p-0.5 shadow flex-shrink-0"
+            />
             <div className="min-w-0">
               <h1 className="font-bold text-xs sm:text-sm md:text-base leading-tight tracking-tight truncate">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
               <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">কৃষি সম্প্রসারণ অধিদপ্তর (DAE) | মোবাইল ডাটা সার্ভিস</p>
@@ -291,7 +357,7 @@ export default function App() {
                   {isActive && (
                     <motion.div 
                       layoutId="activeTabUnderline"
-                      className="absolute bottom-1 left-4 right-4 h-0.5 bg-emerald-300 rounded-full"
+                      className="absolute bottom-1 left-4 right-4 h-0.5 bg-red-400 rounded-full"
                       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                     />
                   )}
@@ -299,8 +365,92 @@ export default function App() {
               );
             })}
           </nav>
+
+          <img
+            src="/dae-logo.webp"
+            onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = '/dae-logo.png'; }}
+            alt="কৃষি সম্প্রসারণ অধিদপ্তর"
+            className="w-8 h-8 sm:w-10 sm:h-10 bg-white rounded-full p-0.5 shadow flex-shrink-0"
+          />
+        </div>
+
+        {/* Flag-inspired accent divider */}
+        <div className="h-[3px] relative" style={{ background: 'linear-gradient(to right,#166534,#dc2626 50%,#166534)', opacity: 0.9 }} />
+
+        {/* Minimal icon-only actions row — kept small to save vertical space */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-1 flex items-center justify-end gap-4 relative">
+          <button
+            onClick={() => setGuideOpen(true)}
+            title="ব্যবহার নির্দেশিকা"
+            aria-label="ব্যবহার নির্দেশিকা"
+            className="flex items-center gap-1 py-0.5 px-1 text-emerald-100 hover:opacity-75 hover:-translate-y-0.5 transition-all duration-150 cursor-pointer bg-transparent border-0"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span className="text-[10px] font-semibold">নির্দেশিকা</span>
+          </button>
+
+          <div className="relative">
+            <button
+              onClick={() => setSharePopoverOpen((v) => !v)}
+              title="অ্যাপ শেয়ার করুন"
+              aria-label="অ্যাপ শেয়ার করুন"
+              className="flex items-center gap-1 py-0.5 px-1 text-red-200 hover:opacity-75 hover:-translate-y-0.5 transition-all duration-150 cursor-pointer bg-transparent border-0"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-semibold">শেয়ার</span>
+            </button>
+
+            <AnimatePresence>
+              {sharePopoverOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setSharePopoverOpen(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-8 w-60 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-50 text-gray-800"
+                  >
+                    <p className="text-[11px] font-bold text-green-800 mb-2 px-1">📤 অ্যাপটি শেয়ার করুন</p>
+                    <button
+                      onClick={handleHeaderShare}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-red-600 to-red-700 shadow-sm hover:brightness-110 transition cursor-pointer mb-1.5"
+                    >
+                      <Share2 className="w-3.5 h-3.5" /> মোবাইল শেয়ার মেনু
+                    </button>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button onClick={handleHeaderFacebookShare} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition cursor-pointer">
+                        <Facebook className="w-4 h-4 text-blue-700" />
+                        <span className="text-[9px] font-semibold text-blue-700">Facebook</span>
+                      </button>
+                      <button onClick={handleHeaderTelegramShare} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-sky-50 hover:bg-sky-100 transition cursor-pointer">
+                        <TelegramIcon className="w-4 h-4 text-sky-600" />
+                        <span className="text-[9px] font-semibold text-sky-600">Telegram</span>
+                      </button>
+                      <button onClick={() => shareViaWhatsApp()} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-green-50 hover:bg-green-100 transition cursor-pointer">
+                        <MessageCircle className="w-4 h-4 text-green-700" />
+                        <span className="text-[9px] font-semibold text-green-700">WhatsApp</span>
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleHeaderCopyLink}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-1.5 rounded-xl text-xs font-semibold text-green-800 bg-green-50 hover:bg-green-100 transition cursor-pointer"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" /> {shareCopied ? '✅ লিংক কপি হয়েছে' : 'লিংক কপি করুন'}
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </header>
+
+      {/* User Guide modal — reachable from the header on every tab */}
+      <UserGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
 
       {/* ======= MOBILE DRAWER OVERLAY (below md only) ======= */}
       <AnimatePresence>

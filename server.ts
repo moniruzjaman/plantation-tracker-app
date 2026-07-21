@@ -1,6 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import fs from "fs";
+import crypto from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -8,6 +10,56 @@ import { GoogleGenAI } from "@google/genai";
 // ─── Prisma Client ─────────────────────────────────────────────────────────
 const prisma = new PrismaClient();
 prisma.$connect().then(() => console.log("[DB] Connected to database"));
+
+// ─── Admin allow-list loader (seed/admins.json) ────────────────────────────
+// Loaded once at server start. Hot-reloadable by touching the file and
+// restarting, or by calling POST /api/auth/bootstrap/refresh (admin only).
+interface AllowListEntry {
+  email: string;
+  role: 'admin' | 'cadre' | 'officer' | 'citizen';
+  name?: string;
+  mobile?: string;
+  designation?: string;
+  district?: string;
+  upazila?: string;
+  blockId?: string;
+  notes?: string;
+}
+let ALLOW_LIST: AllowListEntry[] = [];
+function loadAllowList() {
+  try {
+    const fp = path.join(process.cwd(), 'seed', 'admins.json');
+    if (!fs.existsSync(fp)) {
+      console.warn('[Auth] seed/admins.json not found — bootstrap disabled');
+      ALLOW_LIST = [];
+      return;
+    }
+    const raw = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+    ALLOW_LIST = Array.isArray(raw?.users) ? raw.users : [];
+    console.log(`[Auth] Loaded ${ALLOW_LIST.length} allow-list entries from seed/admins.json`);
+  } catch (err) {
+    console.error('[Auth] Failed to load allow-list:', err);
+    ALLOW_LIST = [];
+  }
+}
+loadAllowList();
+
+/** Look up an email in the allow-list (case-insensitive). */
+function findInAllowList(email: string): AllowListEntry | null {
+  if (!email) return null;
+  const lower = email.toLowerCase().trim();
+  return ALLOW_LIST.find((e) => e.email.toLowerCase().trim() === lower) || null;
+}
+
+/** Compute SHA-256 hash of a file (used for SeedSync.sourceFileHash). */
+function sha256File(filePath: string): string {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return crypto.createHash('sha256').update(buf).digest('hex');
+  } catch {
+    return '';
+  }
+}
 
 // ─── Gemini AI ─────────────────────────────────────────────────────────────
 const ai = new GoogleGenAI({
@@ -55,6 +107,326 @@ async function startServer() {
       res.json({ status: "ok", database: "connected", time: new Date().toISOString() });
     } catch {
       res.json({ status: "degraded", database: "disconnected", time: new Date().toISOString() });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ─── AUTH & USER PROFILE ENDPOINTS ───────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Bootstrap flow (first install):
+  //   1. Client calls GET /api/auth/bootstrap — returns the public allow-list
+  //      (emails + pre-assigned roles, no secrets).
+  //   2. If the device's email matches an entry → client calls
+  //      POST /api/auth/profile with email + allow-list fields → server upserts
+  //      a UserProfile row and returns it. `bootstrapSource = 'allow-list'`.
+  //   3. If no match → client calls POST /api/auth/profile with email + name +
+  //      mobile only → server creates a 'citizen' profile. Name + mobile are
+  //      MANDATORY for non-allow-list users (enforced server-side).
+  //
+  // Token boost:
+  //   When the client later PATCHes the profile with NID/JobID/designation/
+  //   district/upazila, the server computes a one-time
+  //   `profileCompletionBonus` reward and returns the bonus in the response.
+
+  // ─── GET /api/auth/bootstrap — public allow-list ──────────────────────────
+  app.get("/api/auth/bootstrap", async (_req, res) => {
+    res.json({
+      status: "success",
+      count: ALLOW_LIST.length,
+      mandatoryFields: ["name", "mobile"],
+      tokenBoostFields: ["nid", "jobId", "designation", "district", "upazila"],
+      users: ALLOW_LIST.map((u) => ({
+        email: u.email,
+        role: u.role,
+        name: u.name || "",
+        mobile: u.mobile || "",
+        designation: u.designation || "",
+        district: u.district || "",
+        upazila: u.upazila || "",
+        blockId: u.blockId || "",
+      })),
+    });
+  });
+
+  // ─── POST /api/auth/profile — upsert user profile ────────────────────────
+  // Body: { email, name?, mobile?, nid?, jobId?, designation?, district?,
+  //         upazila?, blockId?, photoUrl?, xp?, greenTokens?, streakCount? }
+  // If email matches allow-list, allow-list fields take precedence (admins
+  // can't accidentally downgrade their own role by submitting a partial
+  // profile). For non-allow-list emails, name + mobile are required.
+  app.post("/api/auth/profile", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const email = (body.email || "").toString().toLowerCase().trim();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        res.status(400).json({ error: "Valid email is required" });
+        return;
+      }
+
+      const allowed = findInAllowList(email);
+
+      // For non-allow-list users, name + mobile are mandatory
+      if (!allowed && (!body.name || !body.mobile)) {
+        res.status(400).json({
+          error: "name and mobile are required for self-registered users",
+        });
+        return;
+      }
+
+      // Compute profile completion bonus (one-time)
+      const existing = await prisma.userProfile.findUnique({ where: { email } });
+      const wasBonusClaimed = existing?.profileCompletionBonus ?? false;
+
+      // Build the upsert payload
+      const data: any = {
+        email,
+        name: allowed?.name || body.name || existing?.name || "",
+        mobile: allowed?.mobile || body.mobile || existing?.mobile || "",
+        role: allowed?.role || body.role || existing?.role || "citizen",
+        nid: body.nid ?? existing?.nid ?? null,
+        jobId: body.jobId ?? existing?.jobId ?? null,
+        designation: allowed?.designation || body.designation || existing?.designation || null,
+        district: allowed?.district || body.district || existing?.district || null,
+        upazila: allowed?.upazila || body.upazila || existing?.upazila || null,
+        blockId: allowed?.blockId || body.blockId || existing?.blockId || null,
+        photoUrl: body.photoUrl ?? existing?.photoUrl ?? null,
+        xp: body.xp ?? existing?.xp ?? 0,
+        greenTokens: body.greenTokens ?? existing?.greenTokens ?? 0,
+        streakCount: body.streakCount ?? existing?.streakCount ?? 0,
+        bootstrapSource: existing?.bootstrapSource || (allowed ? "allow-list" : "manual"),
+      };
+
+      // Token-boost: if user just completed NID + JobID for the first time
+      // and the bonus hasn't been claimed yet, award it now.
+      let bonusAwarded = false;
+      let bonusTokens = 0;
+      if (!wasBonusClaimed && data.nid && data.jobId) {
+        bonusTokens = 25; // NID +10, JobID +10, designation +5 = 25
+        if (data.designation) bonusTokens += 5;
+        if (data.district) bonusTokens += 3;
+        if (data.upazila) bonusTokens += 2;
+        data.greenTokens = (data.greenTokens || 0) + bonusTokens;
+        data.profileCompletionBonus = true;
+        bonusAwarded = true;
+      } else if (wasBonusClaimed) {
+        data.profileCompletionBonus = true;
+      }
+
+      const profile = await prisma.userProfile.upsert({
+        where: { email },
+        create: data,
+        update: data,
+      });
+
+      res.json({
+        status: "success",
+        profile,
+        bonusAwarded,
+        bonusTokens,
+        fromAllowList: !!allowed,
+      });
+    } catch (err: any) {
+      console.error("[POST /api/auth/profile] Error:", err);
+      res.status(500).json({ error: err.message || "Failed to upsert profile" });
+    }
+  });
+
+  // ─── GET /api/auth/me?email=... — fetch profile by email ─────────────────
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const email = (req.query.email as string || "").toString().toLowerCase().trim();
+      if (!email) {
+        res.status(400).json({ error: "email query param is required" });
+        return;
+      }
+      const profile = await prisma.userProfile.findUnique({ where: { email } });
+      const allowed = findInAllowList(email);
+      res.json({
+        status: "success",
+        profile,
+        fromAllowList: !!allowed,
+        allowListEntry: allowed
+          ? {
+              email: allowed.email,
+              role: allowed.role,
+              name: allowed.name || "",
+              mobile: allowed.mobile || "",
+              designation: allowed.designation || "",
+              district: allowed.district || "",
+              upazila: allowed.upazila || "",
+            }
+          : null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── GET /api/users — admin-only user list ───────────────────────────────
+  // Query: ?role=admin|cadre|officer|citizen & ?district=...
+  app.get("/api/users", async (req, res) => {
+    try {
+      const requesterEmail = (req.query.requester as string || req.headers['x-user-email'] as string || "").toString().toLowerCase().trim();
+      const requester = await prisma.userProfile.findUnique({ where: { email: requesterEmail } });
+      if (!requester || (requester.role !== 'admin' && requester.role !== 'cadre')) {
+        res.status(403).json({ error: "Admin or cadre role required" });
+        return;
+      }
+
+      const where: any = {};
+      if (req.query.role) where.role = req.query.role;
+      if (req.query.district) where.district = req.query.district;
+      if (req.query.upazila && requester.role === 'cadre') where.upazila = req.query.upazila;
+
+      const users = await prisma.userProfile.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        select: {
+          id: true, email: true, name: true, mobile: true, role: true,
+          designation: true, district: true, upazila: true, jobId: true,
+          xp: true, greenTokens: true, profileCompletionBonus: true,
+          bootstrapSource: true, createdAt: true, updatedAt: true,
+        },
+      });
+      res.json({ status: "success", count: users.length, users });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ─── SEED DATA SYNC ENDPOINTS ────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Two endpoints for syncing the workbook's "process data" sheet into the
+  // Submission table:
+  //   GET  /api/seed/sync-status — returns last sync time + record count
+  //   POST /api/seed/sync        — admin-only bulk upsert (idempotent by
+  //                                clientUid = `seed-${sl}`)
+
+  // ─── GET /api/seed/sync-status ────────────────────────────────────────────
+  app.get("/api/seed/sync-status", async (_req, res) => {
+    try {
+      const lastSync = await prisma.seedSync.findFirst({
+        orderBy: { syncedAt: 'desc' },
+      });
+      const seedSubmissionCount = await prisma.submission.count({
+        where: { clientUid: { startsWith: 'seed-' } },
+      });
+      res.json({
+        status: "success",
+        lastSync,
+        seedSubmissionsInDb: seedSubmissionCount,
+        workbookPath: path.join(process.cwd(), 'seed', 'Tree_Plantation_Reporting_Workbook.xlsx'),
+        workbookExists: fs.existsSync(path.join(process.cwd(), 'seed', 'Tree_Plantation_Reporting_Workbook.xlsx')),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── POST /api/seed/sync — admin-only bulk upsert ────────────────────────
+  // Body: { records: SeedPlantationEntry[], syncedByEmail: string }
+  // Each record is upserted as a Submission row with clientUid = `seed-${sl}`
+  // (idempotent — re-running the same sync is safe).
+  app.post("/api/seed/sync", async (req, res) => {
+    try {
+      const { records, syncedByEmail } = req.body || {};
+      if (!Array.isArray(records) || records.length === 0) {
+        res.status(400).json({ error: "records array is required" });
+        return;
+      }
+
+      // Verify requester is admin (or allow-list admin)
+      const email = (syncedByEmail || "").toString().toLowerCase().trim();
+      const requester = email ? await prisma.userProfile.findUnique({ where: { email } }) : null;
+      const allowed = findInAllowList(email);
+      const isAdmin = (requester?.role === 'admin') || (allowed?.role === 'admin');
+      if (!isAdmin) {
+        res.status(403).json({ error: "Admin role required to sync seed data" });
+        return;
+      }
+
+      // Compute workbook hash for traceability
+      const workbookPath = path.join(process.cwd(), 'seed', 'Tree_Plantation_Reporting_Workbook.xlsx');
+      const fileHash = sha256File(workbookPath);
+
+      let upsertedCount = 0;
+      let skippedCount = 0;
+      const errors: string[] = [];
+
+      for (const r of records) {
+        try {
+          const clientUid = `seed-${r.sl}`;
+          // Idempotent: skip if already synced
+          const existing = await prisma.submission.findUnique({ where: { clientUid } });
+          if (existing) {
+            skippedCount++;
+            continue;
+          }
+
+          await prisma.submission.create({
+            data: {
+              clientUid,
+              entryMode: 'dae_officer',
+              region: 'Rangpur',
+              district: r.district || '',
+              upazila: r.upazila || '',
+              union: '',
+              village: '',
+              plantationDate: r.plantingDate || new Date().toISOString().slice(0, 10),
+              latitude: r.latitude || 0,
+              longitude: r.longitude || 0,
+              accuracy: 0,
+              caretakerName: r.caretaker || '',
+              caretakerMobile: '',
+              saaoName: r.saao || '',
+              saaoMobile: '',
+              monitoringOfficerName: r.monitoringOfficer || '',
+              monitoringOfficerMobile: '',
+              remarks: `Seed import from workbook (SL ${r.sl})`,
+              synced: true,
+              syncedAt: new Date(),
+              seedlings: {
+                create: r.speciesName && r.count
+                  ? [{ speciesName: r.speciesName, count: r.count }]
+                  : [],
+              },
+              photos: { create: [] },
+            },
+          });
+          upsertedCount++;
+        } catch (err: any) {
+          errors.push(`SL ${r.sl}: ${err.message}`);
+        }
+      }
+
+      // Record the sync event
+      const syncRecord = await prisma.seedSync.create({
+        data: {
+          recordCount: records.length,
+          sourceFileName: 'Tree_Plantation_Reporting_Workbook.xlsx',
+          sourceFileHash: fileHash,
+          syncedByEmail: email || null,
+          notes: `Upserted ${upsertedCount}, skipped ${skippedCount} (already synced), ${errors.length} errors`,
+        },
+      });
+
+      res.json({
+        status: "success",
+        syncId: syncRecord.id,
+        upsertedCount,
+        skippedCount,
+        errorCount: errors.length,
+        errors: errors.length > 0 ? errors.slice(0, 10) : undefined,
+        sourceFileHash: fileHash,
+        syncedAt: syncRecord.syncedAt,
+      });
+    } catch (err: any) {
+      console.error("[POST /api/seed/sync] Error:", err);
+      res.status(500).json({ error: err.message || "Failed to sync seed data" });
     }
   });
 
