@@ -76,33 +76,11 @@ async function run() {
       .toFile(path.join(PUBLIC_DIR, 'apple-touch-icon.png'));
     console.log('Created public/apple-touch-icon.png');
 
-    // 4. og-image.png (512x512)
-    await sharp(sourceImgPath)
-      .resize(512, 512, { fit: 'cover' })
-      .png()
-      .toFile(path.join(PUBLIC_DIR, 'og-image.png'));
-    console.log('Created public/og-image.png');
+    // Note: og-image.png / og-image-large.png are intentionally NOT generated here.
+    // og-share-v3.png (the official campaign logo) is the sole sharing image,
+    // referenced directly in index.html's og:image/twitter:image tags.
 
-    // 5. og-image-large.png (1200x630) on custom #15803d brand backdrop
-    await sharp({
-      create: {
-        width: 1200,
-        height: 630,
-        channels: 4,
-        background: { r: 21, g: 128, b: 61, alpha: 1 } // #15803d brand background
-      }
-    })
-      .composite([
-        { 
-          input: await sharp(sourceImgPath).resize(420, 420).png().toBuffer(),
-          gravity: 'center'
-        }
-      ])
-      .png()
-      .toFile(path.join(PUBLIC_DIR, 'og-image-large.png'));
-    console.log('Created public/og-image-large.png');
-
-    // 6. favicon-32x32.png, favicon-16x16.png, favicon.ico
+    // 4. favicon-32x32.png, favicon-16x16.png, favicon.ico
     const fav32 = await sharp(sourceImgPath).resize(32, 32, { fit: 'cover' }).png().toBuffer();
     fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon-32x32.png'), fav32);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.ico'), fav32);
