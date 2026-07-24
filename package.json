@@ -67,6 +67,7 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.1",
     "pagedjs": "^0.4.3",
+    "png-to-ico": "^3.0.2",
     "pngjs": "^7.0.0",
     "prisma": "^6.19.3",
     "sharp": "^0.34.5",
