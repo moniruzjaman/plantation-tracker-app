@@ -32,6 +32,14 @@ async function run() {
     
     console.log(`Using branding source image: ${sourceImgPath}`);
 
+    // Favicon / app-icon source is intentionally separate from the OG-share
+    // campaign badge above: this is "the icon you see and tap" (browser tab,
+    // home screen, taskbar), while sourceImgPath above continues to drive
+    // og-share.png (the fuller illustrated social-sharing banner).
+    const faviconSrcPath = path.join(imgDir, 'favicon-master.png');
+    const FAVICON_SRC = fs.existsSync(faviconSrcPath) ? faviconSrcPath : sourceImgPath;
+    console.log(`Using favicon/app-icon source image: ${FAVICON_SRC}`);
+
     // Ensure folders exist
     if (!fs.existsSync(PUBLIC_DIR)) {
       fs.mkdirSync(PUBLIC_DIR, { recursive: true });
@@ -47,8 +55,8 @@ async function run() {
     // taskbar, and desktop PWA icons don't auto-round corners (unlike
     // iOS/Android app icons), so every "any"-purpose icon below is masked
     // to the logo's inscribed circle instead.
-    async function circularMask(size) {
-      const resized = await sharp(sourceImgPath).resize(size, size, { fit: 'cover' }).png().toBuffer();
+    async function circularMask(size, srcPath = FAVICON_SRC) {
+      const resized = await sharp(srcPath).resize(size, size, { fit: 'cover' }).png().toBuffer();
       const circleSvg = Buffer.from(
         `<svg width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#fff"/></svg>`
       );
@@ -79,7 +87,7 @@ async function run() {
     // 3. apple-touch-icon.png (180x180) -- intentionally OPAQUE/square: iOS
     // renders transparent pixels as solid black and rounds the corners itself,
     // so this one must NOT be circular-masked.
-    await sharp(sourceImgPath)
+    await sharp(FAVICON_SRC)
       .resize(180, 180, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
       .flatten({ background: '#ffffff' })
       .png()
@@ -114,7 +122,7 @@ async function run() {
     // `fit: cover` on a rectangular canvas elsewhere, which zooms a square
     // source until it fills a wider frame and crops the top/bottom off the
     // circular ring text.
-    const ogLogo = await circularMask(1080);
+    const ogLogo = await circularMask(1080, sourceImgPath);
     await sharp({ create: { width: 1200, height: 1200, channels: 4, background: { r: 21, g: 128, b: 61, alpha: 1 } } })
       .composite([{ input: ogLogo, gravity: 'center' }])
       .flatten({ background: '#15803d' })
@@ -126,7 +134,7 @@ async function run() {
     // B. Generate Universal assets in /assets
     
     // 1. icon.png (1024x1024)
-    await sharp(sourceImgPath)
+    await sharp(FAVICON_SRC)
       .resize(1024, 1024, { fit: 'cover' })
       .png()
       .toFile(path.join(ASSETS_DIR, 'icon.png'));
@@ -143,7 +151,7 @@ async function run() {
     })
       .composite([
         { 
-          input: await sharp(sourceImgPath).resize(1024, 1024).png().toBuffer(),
+          input: await sharp(FAVICON_SRC).resize(1024, 1024).png().toBuffer(),
           gravity: 'center'
         }
       ])
@@ -169,7 +177,7 @@ async function run() {
         const mipFolder = path.join(RES_DIR, mip.name);
         if (fs.existsSync(mipFolder)) {
           // Generate square ic_launcher.png
-          await sharp(sourceImgPath)
+          await sharp(FAVICON_SRC)
             .resize(mip.size, mip.size)
             .png()
             .toFile(path.join(mipFolder, 'ic_launcher.png'));
@@ -179,7 +187,7 @@ async function run() {
           const circleMask = Buffer.from(
             `<svg width="${mip.size}" height="${mip.size}"><circle cx="${mip.size / 2}" cy="${mip.size / 2}" r="${mip.size / 2}" fill="#ffffff"/></svg>`
           );
-          const iconResized = await sharp(sourceImgPath)
+          const iconResized = await sharp(FAVICON_SRC)
             .resize(mip.size, mip.size)
             .png()
             .toBuffer();
@@ -203,7 +211,7 @@ async function run() {
 
           // Generate adaptive foreground: centered source logo with safe zone padding on transparent background
           const fgIconSize = Math.round(mip.adaptiveSize * 0.66);
-          const fgIconBuffer = await sharp(sourceImgPath)
+          const fgIconBuffer = await sharp(FAVICON_SRC)
             .resize(fgIconSize, fgIconSize, { fit: 'contain' })
             .png()
             .toBuffer();
