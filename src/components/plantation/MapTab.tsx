@@ -13,6 +13,11 @@ import {
 } from '../../utils/mapHelper';
 import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
 import { SEED_PLANTATIONS } from '../../data/seedPlantations';
+import { getSubmissions, saveSubmission } from '../../lib/db';
+import type { PlantationSubmission } from '../../types/plantation';
+import { colorForUpazila } from '../../utils/upazilaColors';
+import MapFilterBar from './MapFilterBar';
+import MapEditModal from './MapEditModal';
 
 // ---------- Fix #2: Leaflet default marker icon paths break with Vite bundling ----------
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -51,7 +56,7 @@ interface PipelineResult {
 
 function LayerSwitcher({ active, onChange }: { active: LayerId; onChange: (l: LayerId) => void }) {
   return (
-    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
+    <div className="absolute top-16 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
       {(Object.keys(LAYER_LABELS) as LayerId[]).map((id) => (
         <button
           key={id}
@@ -154,7 +159,7 @@ function BoundsTracker({ onBoundsChange }: { onBoundsChange: (b: LatLngBounds) =
 
 function CustomZoomControl({ mapRef }: { mapRef: React.RefObject<LeafletMap | null> }) {
   return (
-    <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
+    <div className="absolute top-16 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
       <button
         onClick={() => mapRef.current?.zoomIn()}
         className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
@@ -265,6 +270,47 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
   const [mapKey, setMapKey] = useState(0);
   // NDVI Simulator & Canopy Growth Tracker panel visibility
   const [simulatorOpen, setSimulatorOpen] = useState(false);
+
+  // ---- Real plantation submissions layer (color-coded, click-to-edit) ----
+  const [submissions, setSubmissions] = useState<PlantationSubmission[]>([]);
+  const [editingSubmission, setEditingSubmission] = useState<PlantationSubmission | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeUpazilas, setActiveUpazilas] = useState<string[]>([]);
+
+  const reloadSubmissions = useCallback(() => {
+    getSubmissions().then(setSubmissions).catch(() => setSubmissions([]));
+  }, []);
+
+  useEffect(() => {
+    reloadSubmissions();
+  }, [reloadSubmissions]);
+
+  const toggleUpazila = useCallback((u: string) => {
+    setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
+  }, []);
+
+  const filteredSubmissions = submissions
+    .filter((s) => s.latitude && s.longitude)
+    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+    .filter((s) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      return (
+        s.village?.toLowerCase().includes(q) ||
+        s.caretakerName?.toLowerCase().includes(q) ||
+        s.upazila?.toLowerCase().includes(q) ||
+        s.seedlings.some((sd) => sd.speciesName?.toLowerCase().includes(q))
+      );
+    });
+
+  const handleSaveEdit = useCallback(
+    async (updated: PlantationSubmission) => {
+      await saveSubmission(updated);
+      setEditingSubmission(null);
+      reloadSubmissions();
+    },
+    [reloadSubmissions]
+  );
 
   const center: [number, number] = geoState?.coords
     ? [geoState.coords.latitude, geoState.coords.longitude]
@@ -407,10 +453,72 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
             </CircleMarker>
           ))}
 
+        {/* Real plantation submissions, color-coded per upazila. Click a
+            marker to see the summary, then "সম্পাদনা" opens MapEditModal
+            for on-site corrections (location, seedling counts, caretaker
+            contact) — writes back through the same offline sync queue
+            used by the entry form. */}
+        {filteredSubmissions.map((s) => {
+          const color = colorForUpazila(s.upazila);
+          const totalCount = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
+          return (
+            <CircleMarker
+              key={s.id}
+              center={[s.latitude, s.longitude]}
+              radius={7}
+              pathOptions={{
+                color,
+                fillColor: color,
+                fillOpacity: 0.8,
+                weight: 2,
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                <div className="text-[10px] leading-tight">
+                  <div className="font-bold">{s.village}</div>
+                  <div className="text-slate-600">
+                    {toBnNum(totalCount)} টি চারা · {s.upazila}
+                  </div>
+                </div>
+              </Tooltip>
+              <Popup>
+                <div className="text-xs min-w-[180px] space-y-1">
+                  <div className="font-bold text-emerald-800 flex items-center gap-1">
+                    <Trees size={12} /> {s.village}
+                  </div>
+                  <div className="space-y-0.5 text-[11px] text-slate-700">
+                    <div><b>উপজেলা:</b> {s.upazila} · {s.union}</div>
+                    <div><b>মোট চারা:</b> {toBnNum(totalCount)} টি</div>
+                    <div><b>পরিচর্যাকারী:</b> {s.caretakerName || '—'}</div>
+                    <div className="font-mono text-[10px] text-slate-500">
+                      {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
+                    </div>
+                    {!s.synced && <div className="text-amber-600 text-[10px]">⏳ সিঙ্ক বাকি</div>}
+                  </div>
+                  <button
+                    onClick={() => setEditingSubmission(s)}
+                    className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                  >
+                    সম্পাদনা
+                  </button>
+                </div>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+
         <BoundsTracker onBoundsChange={setBounds} />
       </MapContainer>
 
       <LayerSwitcher active={activeLayer} onChange={setActiveLayer} />
+      <MapFilterBar
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        activeUpazilas={activeUpazilas}
+        onToggleUpazila={toggleUpazila}
+        onClearUpazilas={() => setActiveUpazilas([])}
+        resultCount={filteredSubmissions.length}
+      />
       <NDVILegend visible={showLegend} />
       <CustomZoomControl mapRef={mapRef} />
       <BoundsOverlay bounds={bounds} />
@@ -452,6 +560,14 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
         onRunPipeline={runPipeline}
         liveNdvi={result?.ndvi_mean ?? null}
       />
+
+      {editingSubmission && (
+        <MapEditModal
+          submission={editingSubmission}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingSubmission(null)}
+        />
+      )}
     </div>
   );
 }

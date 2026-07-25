@@ -34,6 +34,7 @@ import { getSubmissions, countUnsynced, getSubmissionReward } from '../lib/db';
 import { useAuth } from '../hooks/useAuth';
 import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
+import RegistryTab from './RegistryTab';
 import { SEED_PLANTATIONS, SEED_STATS } from '../data/seedPlantations';
 import {
   fetchSeedSyncStatus,
@@ -58,7 +59,7 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<'metrics' | 'health' | 'wealth'>('metrics');
+  const [activeTab, setActiveTab] = useState<'metrics' | 'health' | 'wealth' | 'registry'>('metrics');
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string>('custom');
   const [selectedSpecies, setSelectedSpecies] = useState<string>('আম');
   const [customPlantingDate, setCustomPlantingDate] = useState<string>('2026-03-15');
@@ -423,9 +424,9 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
             </div>
           )}
 
-          {/* Tab Switcher — 3 tabs now */}
+          {/* Tab Switcher — 4 tabs now */}
           <div className="flex border-b border-gray-100 p-0.5 bg-gray-50 rounded-xl">
-            {(['metrics', 'health', 'wealth'] as const).map(tab => (
+            {(['metrics', 'health', 'wealth', 'registry'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -438,6 +439,7 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                 {tab === 'metrics' && (language === 'bn' ? '📊 পরিসংখ্যান' : '📊 Metrics')}
                 {tab === 'health' && (language === 'bn' ? '🌱 স্বাস্থ্য' : '🌱 Health')}
                 {tab === 'wealth' && (language === 'bn' ? '🏆 টোকেন' : '🏆 Wealth')}
+                {tab === 'registry' && (language === 'bn' ? '📋 রেজিস্ট্রি' : '📋 Registry')}
               </button>
             ))}
           </div>
@@ -1292,6 +1294,11 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                 </p>
               </div>
             </div>
+          )}
+
+          {/* ============ REGISTRY TAB ============ */}
+          {activeTab === 'registry' && !loading && (
+            <RegistryTab submissions={submissions} language={language} />
           )}
 
         </motion.div>
