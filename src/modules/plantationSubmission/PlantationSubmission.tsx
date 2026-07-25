@@ -4,34 +4,39 @@ import { useOfflineDraft } from './hooks/useOfflineDraft';
 import { useAuth } from '../../hooks/useAuth';
 import SiteStep from './steps/SiteStep';
 import PlantStep from './steps/PlantStep';
+import GeoFenceStep from './steps/GeoFenceStep';
 import PersonnelStep from './steps/PersonnelStep';
 import ReviewStep from './steps/ReviewStep';
+import { deriveGeofenceMode } from './hooks/useGeofenceMode';
+import { routeToValidator, type ValidationTask } from './services/validationRouter';
+import { submitAllSites } from './services/flattenToLegacySubmission';
 import { createEmptySite, createEmptyPersonnel, type SubmissionInfo } from './types/submission';
 
 interface PlantationSubmissionProps {
   language?: 'bn' | 'en';
 }
 
-type WizardStep = 'site' | 'plant' | 'personnel' | 'review';
-const STEP_ORDER: WizardStep[] = ['site', 'plant', 'personnel', 'review'];
+type WizardStep = 'site' | 'plant' | 'geofence' | 'personnel' | 'review';
+
+// Maps each internal step onto one of the 4 progress dots shown in the UI
+// — 'geofence' is a conditional sub-step of Plant Information (only shown
+// for small_plantation/orchard modes), so it shares Plant's dot rather
+// than inventing a 5th, keeping the "Step X / 4" labeling from the spec.
+const PROGRESS_DOT: Record<WizardStep, number> = { site: 0, plant: 1, geofence: 1, personnel: 2, review: 3 };
 
 /**
- * New Plantation Submission — wizard shell.
+ * New Plantation Submission — wizard shell. All 4 spec phases now wired:
+ *   Phase 1 — Site step (GPS, map, reverse geocode, geofence mode, NDVI/carbon)
+ *   Phase 2 — Plant step (multi-plant, photos, "same site?" branching)
+ *   Phase 3 — Personnel, Review, validationRouter, geofenceValidator
+ *   Phase 4 (this update) — GeoFenceStep (optional radius / mandatory
+ *     polygon depending on mode), and final Submit now actually flattens
+ *     each site into a legacy PlantationSubmission and writes it, so
+ *     entries appear in Map/Dashboard/Registry immediately.
  *
- * Phase 1: Site step (GPS, map, reverse geocode, geofence mode, NDVI/carbon).
- * Phase 2: Plant step (multi-plant, photos, "same site?" branching that
- *   creates additional PlantationSites), Site<->Plant navigation, site switcher.
- * Phase 3 (this update): Personnel step (planter/caretaker, same-as-planter),
- *   Review step (per-site geofence validation score + auto-assigned SAAO via
- *   validationRouter, submission info auto-populated from the logged-in
- *   profile). "Submit" here transitions the draft to READY_FOR_SUBMISSION —
- *   actually flattening each site into a legacy PlantationSubmission and
- *   writing it to the `submissions` table (so it appears in Map/Dashboard/
- *   Registry) is Phase 4, alongside the orchard PolygonDrawer.
- *
- * Still to come:
- *   Phase 4 — PolygonDrawer for orchard mode, flatten-to-legacy-submission
- *             on final submit, replacing the current Form tab after testing
+ * Still NOT done: replacing the existing Form tab. Per the brief, that
+ * only happens after this module has been tested independently — the
+ * "New Form Beta" tab stays a separate, additive entry point.
  */
 export default function PlantationSubmission({ language = 'bn' }: PlantationSubmissionProps) {
   const { draft, loading, saving, updateDraft, setStatus } = useOfflineDraft();
@@ -39,6 +44,7 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
   const [activeSiteIndex, setActiveSiteIndex] = useState(0);
   const [wizardStep, setWizardStep] = useState<WizardStep>('site');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const t = {
     title: language === 'bn' ? 'নতুন বৃক্ষরোপণ এন্ট্রি' : 'New Plantation Submission',
@@ -49,6 +55,7 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
     stepLabel: {
       site: language === 'bn' ? 'ধাপ ১ / ৪ — স্থানের তথ্য' : 'Step 1 / 4 — Site Information',
       plant: language === 'bn' ? 'ধাপ ২ / ৪ — চারার তথ্য' : 'Step 2 / 4 — Plant Information',
+      geofence: language === 'bn' ? 'ধাপ ২ / ৪ — জিও-ফেন্স' : 'Step 2 / 4 — Geofence',
       personnel: language === 'bn' ? 'ধাপ ৩ / ৪ — ব্যক্তিগত তথ্য' : 'Step 3 / 4 — Personnel',
       review: language === 'bn' ? 'ধাপ ৪ / ৪ — পর্যালোচনা' : 'Step 4 / 4 — Review',
     },
@@ -56,11 +63,13 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
     back: language === 'bn' ? 'পূর্ববর্তী' : 'Back',
     next: language === 'bn' ? 'পরবর্তী' : 'Next',
     submit: language === 'bn' ? 'জমা দিন' : 'Submit',
+    submitting: language === 'bn' ? 'জমা হচ্ছে...' : 'Submitting...',
     needAtLeastOnePlant: language === 'bn' ? 'এগোতে হলে অন্তত একটি চারা যোগ করুন' : 'Add at least one plant to continue',
+    needPolygon: language === 'bn' ? 'এগোতে হলে সীমানা আঁকুন' : 'Draw the boundary to continue',
     submittedTitle: language === 'bn' ? 'এন্ট্রি জমা হয়েছে' : 'Entry Submitted',
     submittedDesc: language === 'bn'
-      ? 'আপনার এন্ট্রি সংরক্ষিত হয়েছে এবং যাচাইয়ের জন্য সারিবদ্ধ করা হয়েছে। সিঙ্ক ফিচার (Phase 4) যুক্ত হলে এটি স্বয়ংক্রিয়ভাবে সার্ভারে পাঠানো হবে।'
-      : 'Your entry has been saved and queued for validation. Once sync (Phase 4) is wired up, it will be sent automatically.',
+      ? 'এন্ট্রিটি সংরক্ষিত হয়েছে এবং ম্যাপ/ড্যাশবোর্ড/রেজিস্ট্রিতে দেখা যাবে। সার্ভার সিঙ্ক পরবর্তীতে স্বয়ংক্রিয়ভাবে হবে।'
+      : 'The entry has been saved and will now appear in Map/Dashboard/Registry. Server sync happens automatically later.',
   };
 
   if (loading || !draft) {
@@ -106,10 +115,6 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
     });
   };
 
-  // "No, different site" from PlantStep's same-site prompt — appends a
-  // fresh PlantationSite (+ a Personnel record defaulted from the current
-  // site's, since the same officer is usually filing both), makes it
-  // active, and routes back to SiteStep (a new site needs its own GPS).
   const handleRequestNewSite = () => {
     const newSite = createEmptySite();
     const newPersonnel = { ...currentPersonnel, site_id: newSite.site_id };
@@ -125,6 +130,16 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
   const canAdvanceToPlant = site.location.latitude !== 0 || site.location.longitude !== 0;
   const canAdvanceFromPlant = site.plants.length > 0;
 
+  const currentMode = deriveGeofenceMode(
+    site.plants.reduce((s, p) => s + (p.quantity || 0), 0),
+    site.geofence.areaSqMeters
+  );
+  const needsGeofenceStep = currentMode !== 'single_tree';
+  const canAdvanceFromGeofence = currentMode !== 'orchard' || (!!site.geofence.polygon && site.geofence.polygon.length >= 3);
+
+  const goPlantNext = () => setWizardStep(needsGeofenceStep ? 'geofence' : 'personnel');
+  const goPersonnelBack = () => setWizardStep(needsGeofenceStep ? 'geofence' : 'plant');
+
   const submissionInfo: SubmissionInfo = draft.submissionInfo ?? {
     submittedById: session?.uid || 'guest',
     submittedByName: session?.name || 'অনিবন্ধিত ব্যবহারকারী',
@@ -137,13 +152,25 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
     status: 'pending_validation',
   };
 
-  const handleSubmit = () => {
-    updateDraft((prev) => ({ ...prev, submissionInfo }));
-    setStatus('READY_FOR_SUBMISSION');
-    setSubmitted(true);
-  };
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      updateDraft((prev) => ({ ...prev, submissionInfo }));
 
-  const stepIndex = STEP_ORDER.indexOf(wizardStep);
+      const routingBySiteId: Record<string, ValidationTask> = {};
+      for (const s of draft.sites) {
+        routingBySiteId[s.site_id] = routeToValidator(s);
+      }
+
+      const entryMode = session?.role === 'officer' ? 'dae_officer' : 'citizen';
+      await submitAllSites(draft.sites, draft.personnel, submissionInfo, routingBySiteId, entryMode);
+
+      setStatus('SUBMITTED');
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="w-full h-full overflow-y-auto bg-white font-sans">
@@ -168,8 +195,7 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
           </div>
         </div>
 
-        {/* Site switcher — only shown once a "different site" branch exists,
-            hidden on the Review step since that already lists every site */}
+        {/* Site switcher */}
         {draft.sites.length > 1 && wizardStep !== 'review' && (
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {draft.sites.map((s, i) => (
@@ -189,10 +215,10 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
           </div>
         )}
 
-        {/* Progress indicator — 4 steps */}
+        {/* Progress indicator — 4 dots */}
         <div className="flex items-center gap-1 mb-4">
-          {STEP_ORDER.map((s, n) => (
-            <div key={s} className={`flex-1 h-1.5 rounded-full ${n <= stepIndex ? 'bg-emerald-600' : 'bg-gray-100'}`} />
+          {[0, 1, 2, 3].map((n) => (
+            <div key={n} className={`flex-1 h-1.5 rounded-full ${n <= PROGRESS_DOT[wizardStep] ? 'bg-emerald-600' : 'bg-gray-100'}`} />
           ))}
         </div>
         <p className="text-[11px] font-semibold text-emerald-700 mb-3">{t.stepLabel[wizardStep]}</p>
@@ -231,8 +257,32 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
               <div className="text-right">
                 {!canAdvanceFromPlant && <p className="text-[10px] text-amber-600 mb-1">{t.needAtLeastOnePlant}</p>}
                 <button
-                  onClick={() => canAdvanceFromPlant && setWizardStep('personnel')}
+                  onClick={() => canAdvanceFromPlant && goPlantNext()}
                   disabled={!canAdvanceFromPlant}
+                  className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {t.next} <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {wizardStep === 'geofence' && (
+          <>
+            <GeoFenceStep site={site} onChange={updateSiteAt(activeSiteIndex)} language={language} />
+            <div className="flex items-center justify-between mt-4">
+              <button
+                onClick={() => setWizardStep('plant')}
+                className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
+              >
+                <ChevronLeft size={14} /> {t.back}
+              </button>
+              <div className="text-right">
+                {!canAdvanceFromGeofence && <p className="text-[10px] text-amber-600 mb-1">{t.needPolygon}</p>}
+                <button
+                  onClick={() => canAdvanceFromGeofence && setWizardStep('personnel')}
+                  disabled={!canAdvanceFromGeofence}
                   className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {t.next} <ChevronRight size={14} />
@@ -251,7 +301,7 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
             />
             <div className="flex items-center justify-between mt-4">
               <button
-                onClick={() => setWizardStep('plant')}
+                onClick={goPersonnelBack}
                 className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
               >
                 <ChevronLeft size={14} /> {t.back}
@@ -278,9 +328,11 @@ export default function PlantationSubmission({ language = 'bn' }: PlantationSubm
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex items-center gap-1 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition cursor-pointer"
+                disabled={submitting}
+                className="flex items-center gap-1 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-60 cursor-pointer"
               >
-                <CheckCircle2 size={14} /> {t.submit}
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                {submitting ? t.submitting : t.submit}
               </button>
             </div>
           </>
