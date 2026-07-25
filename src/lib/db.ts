@@ -134,6 +134,7 @@ export function getSubmissionReward(sub: PlantationSubmission): SubmissionReward
 class PlantationDB extends Dexie {
   submissions!: EntityTable<PlantationSubmission, 'id'>;
   userProfile!: EntityTable<UserProfile, 'id'>;
+  newSubmissionDrafts!: EntityTable<import('../modules/plantationSubmission/types/submission').SubmissionDraft, 'draft_id'>;
 
   constructor() {
     super('PlantationTrackerDB');
@@ -147,6 +148,16 @@ class PlantationDB extends Dexie {
     this.version(2).stores({
       submissions: 'id, timestamp, synced, district, upazila',
       userProfile: 'id, mobile, role',
+    });
+
+    // v3: add newSubmissionDrafts table for the new multi-site/multi-plant
+    // wizard module (src/modules/plantationSubmission). Additive only —
+    // does not touch the existing `submissions` table, so the current
+    // Form/Map/Dashboard/Registry tabs are unaffected.
+    this.version(3).stores({
+      submissions: 'id, timestamp, synced, district, upazila',
+      userProfile: 'id, mobile, role',
+      newSubmissionDrafts: 'draft_id, status, updatedAt',
     });
   }
 }
