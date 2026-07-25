@@ -15,6 +15,7 @@ import AIAssistant from './components/AIAssistant';
 import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
 import ProfilePage from './components/plantation/ProfilePage';
+import NewPlantationSubmission from './modules/plantationSubmission/PlantationSubmission';
 import { saveSubmission, getSubmissions } from './utils/submissionStore';
 import { getSubmissionReward } from './lib/db';
 import { useAuth } from './hooks/useAuth';
@@ -50,6 +51,10 @@ const tabs = [
   { id: 'map', label: 'ম্যাপ', icon: MapIcon },
   { id: 'profile', label: 'প্রোফাইল', icon: UserCircle },
   { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard },
+  // Temporary nav entry for the new multi-site/multi-plant submission
+  // wizard (src/modules/plantationSubmission), built alongside the
+  // existing Form tab for testing — not a replacement yet.
+  { id: 'newFormBeta', label: 'New Form Beta', icon: Sparkles },
 ] as const;
 
 type TabId = typeof tabs[number]['id'] | 'storedData' | 'admin';
@@ -531,11 +536,18 @@ export default function App() {
           <OfflinePlantationDashboard syncState={offlineQueue} />
         </div>
 
+        <div
+          className="absolute inset-0 overflow-y-auto form-scroll-area"
+          style={{ display: currentTab === 'newFormBeta' ? 'block' : 'none' }}
+        >
+          <NewPlantationSubmission />
+        </div>
+
         {/* Legacy iframe for storedData / admin */}
         <iframe 
           id="app-iframe"
           src="legacy-nursery.html" 
-          style={{ display: ['form', 'map', 'profile', 'dashboard'].includes(currentTab) ? 'none' : 'block', width: '100%', height: '100%', border: 'none' }}
+          style={{ display: ['form', 'map', 'profile', 'dashboard', 'newFormBeta'].includes(currentTab) ? 'none' : 'block', width: '100%', height: '100%', border: 'none' }}
           title="Plantation Dashboard" 
           allow="geolocation"
           onLoad={(e) => {
