@@ -13,6 +13,7 @@ import {
 } from '../../utils/mapHelper';
 import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
 import { SEED_PLANTATIONS } from '../../data/seedPlantations';
+import { useSheetPlantations } from '../../hooks/useSheetPlantations';
 import { getSubmissions, saveSubmission } from '../../lib/db';
 import type { PlantationSubmission } from '../../types/plantation';
 import { colorForUpazila } from '../../utils/upazilaColors';
@@ -271,6 +272,10 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
   // NDVI Simulator & Canopy Growth Tracker panel visibility
   const [simulatorOpen, setSimulatorOpen] = useState(false);
 
+  // ---- Live Google Sheet data (App_Entry via Apps Script), replaces the
+  // frozen SEED_PLANTATIONS snapshot once it loads successfully ----
+  const { entries: sheetEntries, live: sheetLive } = useSheetPlantations();
+
   // ---- Real plantation submissions layer (color-coded, click-to-edit) ----
   const [submissions, setSubmissions] = useState<PlantationSubmission[]>([]);
   const [editingSubmission, setEditingSubmission] = useState<PlantationSubmission | null>(null);
@@ -408,50 +413,108 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           attribution={tiles.attribution}
         />
 
-        {/* Seed plantation markers from the Tree Plantation Reporting Workbook.
-            Each circle marker is colored emerald (matches project palette) and
-            shows a tooltip with the species + count on hover. Click for full
-            details in the popup. */}
-        {SEED_PLANTATIONS
-          .filter((p) => p.latitude !== 0 && p.longitude !== 0)
-          .map((p) => (
-            <CircleMarker
-              key={`seed-${p.sl}`}
-              center={[p.latitude, p.longitude]}
-              radius={6}
-              pathOptions={{
-                color: '#047857',          // emerald-700 ring
-                fillColor: '#10b981',       // emerald-500 fill
-                fillOpacity: 0.75,
-                weight: 2,
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
-                <div className="text-[10px] leading-tight">
-                  <div className="font-bold">{p.speciesName}</div>
-                  <div className="text-slate-600">
-                    {toBnNum(p.count)} টি · {p.district} / {p.upazila}
-                  </div>
-                </div>
-              </Tooltip>
-              <Popup>
-                <div className="text-xs min-w-[180px]">
-                  <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
-                    <Trees size={12} /> {p.speciesName}
-                  </div>
-                  <div className="space-y-0.5 text-[11px] text-slate-700">
-                    <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
-                    <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
-                    <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
-                    <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
-                    <div className="font-mono text-[10px] text-slate-500 mt-1">
-                      {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+        {/* Plantation markers from the Tree Plantation Reporting Workbook.
+            When the Apps Script live sheet sync (GAS_WEBHOOK_URL) is
+            configured and reachable, every App_Entry row is plotted here
+            (hundreds of live field submissions). If it's unavailable --
+            offline, not configured, or GAS is briefly down -- this falls
+            back to the frozen 36-row SEED_PLANTATIONS snapshot so the map
+            is never empty. Each circle marker is colored emerald (matches
+            project palette) and shows a tooltip on hover; click for the
+            full popup. */}
+        {sheetLive
+          ? sheetEntries.map((p, i) => {
+              const primarySpecies = p.seedlings[0]?.speciesName || '';
+              const speciesLabel =
+                p.seedlings.length > 1
+                  ? `${primarySpecies} +${p.seedlings.length - 1}`
+                  : primarySpecies || 'বৃক্ষরোপণ';
+              return (
+                <CircleMarker
+                  key={`sheet-${p.submissionId || i}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: '#047857',          // emerald-700 ring
+                    fillColor: '#10b981',       // emerald-500 fill
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{speciesLabel}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.totalQuantity)} টি · {p.district} / {p.upazila}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          ))}
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {speciesLabel}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        {p.union && <div><b>ইউনিয়ন/গ্রাম:</b> {p.union} {p.village ? `/ ${p.village}` : ''}</div>}
+                        <div><b>সংখ্যা:</b> {toBnNum(p.totalQuantity)} টি</div>
+                        {p.plantingDate && <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>}
+                        {p.farmerName && (
+                          <div><b>কৃষক:</b> {p.farmerName}{p.farmerMobile ? ` (${p.farmerMobile})` : ''}</div>
+                        )}
+                        {p.saaoName && <div><b>SAAO:</b> {p.saaoName}</div>}
+                        {p.officerName && <div><b>মনিটরিং অফিসার:</b> {p.officerName}</div>}
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 mt-1">🔴 লাইভ শীট থেকে</div>
+                      </div>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })
+          : SEED_PLANTATIONS
+              .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+              .map((p) => (
+                <CircleMarker
+                  key={`seed-${p.sl}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: '#047857',          // emerald-700 ring
+                    fillColor: '#10b981',       // emerald-500 fill
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{p.speciesName}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {p.speciesName}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
+                        <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
+                        <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-amber-600 mt-1">📦 অফলাইন সিড স্ন্যাপশট</div>
+                      </div>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
 
         {/* Real plantation submissions, color-coded per upazila. Click a
             marker to see the summary, then "সম্পাদনা" opens MapEditModal

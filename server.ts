@@ -111,6 +111,57 @@ async function startServer() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ─── GOOGLE SHEETS LIVE SYNC (App_Entry via Apps Script) ─────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Powers the ম্যাপ tab's "live sheet" markers. The deployed Apps Script
+  // web app (see AppsScript.gs in this repo's /seed folder) is the source
+  // of truth for the Tree Plantation Reporting Workbook's App_Entry sheet.
+  // Browsers can't call the GAS /exec URL directly (CORS), so this proxies
+  // server-side and caches the response for GAS_SHEET_CACHE_MS to avoid
+  // hammering the sheet on every map load.
+  //
+  // Set GAS_WEBHOOK_URL in the environment to the Apps Script deployment's
+  // /exec URL to enable this. Without it, /api/sheet/list returns
+  // { status: "disabled" } and the map falls back to seed + local data only.
+
+  const GAS_WEBHOOK_URL = process.env.GAS_WEBHOOK_URL || "";
+  const GAS_SHEET_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+  let gasSheetCache: { fetchedAt: number; payload: any } | null = null;
+
+  app.get("/api/sheet/list", async (req, res) => {
+    if (!GAS_WEBHOOK_URL) {
+      res.json({ status: "disabled", reason: "GAS_WEBHOOK_URL not configured", entries: [] });
+      return;
+    }
+    try {
+      const forceRefresh = req.query.refresh === "1";
+
+      if (!forceRefresh && gasSheetCache && Date.now() - gasSheetCache.fetchedAt < GAS_SHEET_CACHE_MS) {
+        res.json({ ...gasSheetCache.payload, cached: true });
+        return;
+      }
+
+      const url = new URL(GAS_WEBHOOK_URL);
+      url.searchParams.set("list", "1");
+      // District/region filtering happens client-side against the cached
+      // payload so one GAS fetch can serve every filter combination.
+      const gasRes = await fetch(url.toString(), { method: "GET" });
+      const data = await gasRes.json();
+
+      gasSheetCache = { fetchedAt: Date.now(), payload: data };
+      res.json({ ...data, cached: false });
+    } catch (err: any) {
+      // Serve stale cache rather than breaking the map if GAS is briefly down
+      if (gasSheetCache) {
+        res.json({ ...gasSheetCache.payload, cached: true, stale: true, error: err.message });
+        return;
+      }
+      res.status(502).json({ status: "error", error: err.message, entries: [] });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ─── AUTH & USER PROFILE ENDPOINTS ───────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
   //
