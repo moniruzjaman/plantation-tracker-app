@@ -15,6 +15,7 @@ import AIAssistant from './components/AIAssistant';
 import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
 import ProfilePage from './components/plantation/ProfilePage';
+import NewPlantationSubmission from './modules/plantationSubmission/PlantationSubmission';
 import { saveSubmission, getSubmissions } from './utils/submissionStore';
 import { getSubmissionReward } from './lib/db';
 import { useAuth } from './hooks/useAuth';
@@ -240,6 +241,31 @@ export default function App() {
     // Show reward toast
     if (reward.xp > 0 || reward.tokens > 0) {
       setRewardToast(reward);
+      setTimeout(() => setRewardToast(null), 4000);
+    }
+  };
+
+  // New wizard (src/modules/plantationSubmission) already saves each site's
+  // flattened submission itself via submitAllSites -> saveSubmission, so
+  // this only refreshes the status hub + awards rewards -- same reward
+  // logic as handlePlantationSubmit above, just summed across every site
+  // in the draft so a multi-site submit shows one toast, not one per site.
+  const handleNewWizardSubmitted = (submissions: PlantationSubmission[]) => {
+    refreshMcSubmissions();
+
+    let totalXp = 0;
+    let totalTokens = 0;
+    const breakdown: { label: string; xp: number; tokens: number }[] = [];
+    for (const submission of submissions) {
+      const reward = getSubmissionReward(submission);
+      totalXp += reward.xp;
+      totalTokens += reward.tokens;
+      breakdown.push(...reward.breakdown);
+    }
+    if (totalXp > 0) addXp(totalXp, 'ফর্ম জমা');
+    if (totalTokens > 0) addTokens(totalTokens, 'তথ্য পুরস্কার');
+    if (totalXp > 0 || totalTokens > 0) {
+      setRewardToast({ xp: totalXp, tokens: totalTokens, breakdown });
       setTimeout(() => setRewardToast(null), 4000);
     }
   };
@@ -507,7 +533,7 @@ export default function App() {
           className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'form' ? 'block' : 'none' }}
         >
-          <PlantationForm geoState={geoState} onSubmit={handlePlantationSubmit} />
+          <NewPlantationSubmission onSubmitted={handleNewWizardSubmitted} />
         </div>
 
         <div

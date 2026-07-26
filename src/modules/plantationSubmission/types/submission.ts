@@ -129,6 +129,11 @@ export interface SubmissionDraft {
   draft_id: string; // local id, stable across autosaves
   submission_id?: string; // assigned once finalized
   sites: PlantationSite[];
+  /** One Personnel record per site (keyed by site_id via Personnel.site_id),
+   *  stored as a flat array rather than nested under PlantationSite so a
+   *  site created before Personnel is filled in doesn't need a placeholder
+   *  Personnel object threaded through every site mutation. */
+  personnel: Personnel[];
   submissionInfo?: SubmissionInfo;
   status: DraftStatus;
   createdAt: string;
@@ -184,11 +189,24 @@ export function createEmptyPlant(): PlantEntry {
   };
 }
 
+export function createEmptyPersonnel(site_id: string): Personnel {
+  return {
+    site_id,
+    planterName: '',
+    planterMobile: '',
+    caretakerSameAsPlanter: false,
+    caretakerName: '',
+    caretakerMobile: '',
+  };
+}
+
 export function createEmptyDraft(): SubmissionDraft {
   const now = new Date().toISOString();
+  const firstSite = createEmptySite();
   return {
     draft_id: crypto.randomUUID(),
-    sites: [createEmptySite()],
+    sites: [firstSite],
+    personnel: [createEmptyPersonnel(firstSite.site_id)],
     status: 'DRAFT',
     createdAt: now,
     updatedAt: now,
