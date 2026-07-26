@@ -3,7 +3,7 @@
  * Custom_Upazila sheet backend.
  *
  * This file is NOT deployed by Vercel/git. Copy its contents into the
- * Apps Script project bound to the Tree Plantation Reporting Workbook
+ * Apps Script project bound to the plantation_submission_system
  * (Extensions -> Apps Script), replacing the existing Code.gs, then
  * Deploy -> Manage deployments -> Edit -> New version. The deployment's
  * /exec URL is what you set as GAS_WEBHOOK_URL on Vercel -- the app never
@@ -48,7 +48,7 @@ var COLUMNS = [
   'বৃক্ষের শ্রেণী', 'সংখ্যা', 'প্রাথমিক NDVI', 'ছবি (ইনলাইন)',
   'ছবি SHA-256', 'কৃষকের নাম', 'কৃষকের মোবাইল', 'SAAO-এর নাম',
   'SAAO-এর মোবাইল', 'মনিটরিং অফিসারের নাম', 'মনিটরিং অফিসারের মোবাইল',
-  'মন্তব্য', 'সত্যায়ন হ্যাশ', 'সিঙ্কের সময়',
+  'মন্তব্য', 'সত্যায়ন হ্যাশ', 'সিঙ্কের সময়', 'source',
   'ব্লক' // Appended at the end (not inserted mid-schema) so existing rows
          // in the live sheet keep their column positions. Needed for the
          // government 17-column report, which is the only place ব্লক is
@@ -359,7 +359,8 @@ function readAllRows_() {
       officerMobile:String(get('মনিটরিং অফিসারের মোবাইল') || ''),
       remarks:      String(get('মন্তব্য') || ''),
       submittedAt:  String(get('জমার সময়') || ''),
-      block:        String(get('ব্লক') || '')
+      block:        String(get('ব্লক') || ''),
+      source:       String(get('source') || '')
     });
   }
   return rows;
