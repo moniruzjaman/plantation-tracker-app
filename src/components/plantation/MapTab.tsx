@@ -413,7 +413,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           attribution={tiles.attribution}
         />
 
-        {/* Plantation markers from the Tree Plantation Reporting Workbook.
+        {/* Plantation markers from the plantation submission system.
             When the Apps Script live sheet sync (GAS_WEBHOOK_URL) is
             configured and reachable, every App_Entry row is plotted here
             (hundreds of live field submissions). If it's unavailable --
