@@ -359,7 +359,7 @@ export default function App() {
             />
             <div className="min-w-0">
               <h1 className="font-bold text-xs sm:text-sm md:text-base leading-tight tracking-tight truncate">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
-              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">কৃষি সম্প্রসারণ অধিদপ্তর (DAE) | মোবাইল ডাটা সার্ভিস</p>
+              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">বৃক্ষ রোপণে সাজাই দেশ, সবার আগে বাংলাদেশ</p>
             </div>
           </div>
 
