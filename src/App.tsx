@@ -341,7 +341,7 @@ export default function App() {
           className="absolute inset-0 pointer-events-none"
           style={{ background: 'radial-gradient(circle at 92% -30%, rgba(220,38,38,.35) 0%, rgba(220,38,38,0) 55%)' }}
         />
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-12 sm:h-14 md:h-16 flex items-center justify-between relative">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-14 md:h-16 flex items-center justify-between relative">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             {/* Hamburger menu for mobile + tablet (below md) */}
             <button
@@ -359,7 +359,7 @@ export default function App() {
             />
             <div className="min-w-0">
               <h1 className="font-bold text-xs sm:text-sm md:text-base leading-tight tracking-tight truncate">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
-              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">বৃক্ষ রোপণে সাজাই দেশ, সবার আগে বাংলাদেশ</p>
+              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 font-medium truncate">বৃক্ষ রোপণে সাজাই দেশ, সবার আগে বাংলাদেশ</p>
             </div>
           </div>
 
