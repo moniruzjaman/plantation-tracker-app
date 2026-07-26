@@ -22,7 +22,6 @@ import { useAuth } from './hooks/useAuth';
 import type { PlantationSubmission } from './types/plantation';
 import UserGuideModal from './components/UserGuideModal';
 import MobileControlCenter from './components/MobileControlCenter';
-import { shareApp, shareViaWhatsApp, getDefaultSharePayload } from './utils/shareApp';
 import { 
   Sparkles, 
   ClipboardList, 
@@ -31,12 +30,6 @@ import {
   UserCircle,
   Menu,
   X,
-  Share2,
-  BookOpen,
-  MessageCircle,
-  Link as LinkIcon,
-  Facebook,
-  Send as TelegramIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Coins, Star } from 'lucide-react';
@@ -64,8 +57,6 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<TabId>('form');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [sharePopoverOpen, setSharePopoverOpen] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
   const [rewardToast, setRewardToast] = useState<{ xp: number; tokens: number; breakdown: { label: string; xp: number; tokens: number }[] } | null>(null);
   const [mcSubmissions, setMcSubmissions] = useState<PlantationSubmission[]>([]);
   const { addXp, addTokens, session } = useAuth();
@@ -79,36 +70,6 @@ export default function App() {
   useEffect(() => {
     refreshMcSubmissions();
   }, [refreshMcSubmissions]);
-
-  const handleHeaderShare = useCallback(async () => {
-    const result = await shareApp();
-    if (result === 'copied') {
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
-    }
-    if (result === 'shared' || result === 'copied') {
-      setSharePopoverOpen(false);
-    }
-  }, []);
-
-  const handleHeaderCopyLink = useCallback(() => {
-    const { url } = getDefaultSharePayload();
-    navigator.clipboard?.writeText(url).then(() => {
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
-    }).catch(() => {});
-  }, []);
-
-  const handleHeaderFacebookShare = useCallback(() => {
-    const { url } = getDefaultSharePayload();
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer');
-  }, []);
-
-  const handleHeaderTelegramShare = useCallback(() => {
-    const { url, text } = getDefaultSharePayload();
-    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
-  }, []);
-
 
   // Ref to notify MapTab to invalidateSize
   const mapInvalidateRef = useRef<(() => void) | null>(null);
@@ -402,77 +363,6 @@ export default function App() {
 
         {/* Flag-inspired accent divider */}
         <div className="h-[3px] relative" style={{ background: 'linear-gradient(to right,#166534,#dc2626 50%,#166534)', opacity: 0.9 }} />
-
-        {/* Minimal icon-only actions row — kept small to save vertical space */}
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-1 flex items-center justify-end gap-4 relative">
-          <button
-            onClick={() => setGuideOpen(true)}
-            title="ব্যবহার নির্দেশিকা"
-            aria-label="ব্যবহার নির্দেশিকা"
-            className="flex items-center gap-1 py-0.5 px-1 text-emerald-100 hover:opacity-75 hover:-translate-y-0.5 transition-all duration-150 cursor-pointer bg-transparent border-0"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span className="text-[10px] font-semibold">নির্দেশিকা</span>
-          </button>
-
-          <div className="relative">
-            <button
-              onClick={() => setSharePopoverOpen((v) => !v)}
-              title="অ্যাপ শেয়ার করুন"
-              aria-label="অ্যাপ শেয়ার করুন"
-              className="flex items-center gap-1 py-0.5 px-1 text-red-200 hover:opacity-75 hover:-translate-y-0.5 transition-all duration-150 cursor-pointer bg-transparent border-0"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-semibold">শেয়ার</span>
-            </button>
-
-            <AnimatePresence>
-              {sharePopoverOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setSharePopoverOpen(false)}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-8 w-60 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-50 text-gray-800"
-                  >
-                    <p className="text-[11px] font-bold text-green-800 mb-2 px-1">📤 অ্যাপটি শেয়ার করুন</p>
-                    <button
-                      onClick={handleHeaderShare}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-red-600 to-red-700 shadow-sm hover:brightness-110 transition cursor-pointer mb-1.5"
-                    >
-                      <Share2 className="w-3.5 h-3.5" /> মোবাইল শেয়ার মেনু
-                    </button>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <button onClick={handleHeaderFacebookShare} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 transition cursor-pointer">
-                        <Facebook className="w-4 h-4 text-blue-700" />
-                        <span className="text-[9px] font-semibold text-blue-700">Facebook</span>
-                      </button>
-                      <button onClick={handleHeaderTelegramShare} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-sky-50 hover:bg-sky-100 transition cursor-pointer">
-                        <TelegramIcon className="w-4 h-4 text-sky-600" />
-                        <span className="text-[9px] font-semibold text-sky-600">Telegram</span>
-                      </button>
-                      <button onClick={() => shareViaWhatsApp()} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-green-50 hover:bg-green-100 transition cursor-pointer">
-                        <MessageCircle className="w-4 h-4 text-green-700" />
-                        <span className="text-[9px] font-semibold text-green-700">WhatsApp</span>
-                      </button>
-                    </div>
-                    <button
-                      onClick={handleHeaderCopyLink}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-1.5 rounded-xl text-xs font-semibold text-green-800 bg-green-50 hover:bg-green-100 transition cursor-pointer"
-                    >
-                      <LinkIcon className="w-3.5 h-3.5" /> {shareCopied ? '✅ লিংক কপি হয়েছে' : 'লিংক কপি করুন'}
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
       </header>
 
       {/* User Guide modal — reachable from the header on every tab */}
