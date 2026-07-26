@@ -72,6 +72,7 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
     submit: language === 'bn' ? 'জমা দিন' : 'Submit',
     submitting: language === 'bn' ? 'জমা হচ্ছে...' : 'Submitting...',
     needAtLeastOnePlant: language === 'bn' ? 'এগোতে হলে অন্তত একটি চারা যোগ করুন' : 'Add at least one plant to continue',
+    needAllPlantNames: language === 'bn' ? 'প্রতিটি চারার নাম দিন — খালি রাখা যাবে না' : 'Every plant needs a name before continuing',
     needPolygon: language === 'bn' ? 'এগোতে হলে সীমানা আঁকুন' : 'Draw the boundary to continue',
     submittedTitle: language === 'bn' ? 'এন্ট্রি জমা হয়েছে' : 'Entry Submitted',
     submittedDesc: language === 'bn'
@@ -135,7 +136,14 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
   };
 
   const canAdvanceToPlant = site.location.latitude !== 0 || site.location.longitude !== 0;
-  const canAdvanceFromPlant = site.plants.length > 0;
+  // Was `site.plants.length > 0` only -- let an empty PlantCard (name never
+  // typed) through as long as at least one card existed, so the very first
+  // plant's name silently landed blank in the final submission (reported:
+  // "1st plant name entry missing, directly going to [step] 2"). Every
+  // plant on the site now has to actually have a species name before
+  // Next unlocks, not just exist.
+  const hasAllPlantNames = site.plants.length > 0 && site.plants.every((p) => p.speciesName.trim() !== '');
+  const canAdvanceFromPlant = hasAllPlantNames;
 
   const currentMode = deriveGeofenceMode(
     site.plants.reduce((s, p) => s + (p.quantity || 0), 0),
@@ -263,7 +271,11 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
                 <ChevronLeft size={14} /> {t.back}
               </button>
               <div className="text-right">
-                {!canAdvanceFromPlant && <p className="text-[10px] text-amber-600 mb-1">{t.needAtLeastOnePlant}</p>}
+                {!canAdvanceFromPlant && (
+                  <p className="text-[10px] text-amber-600 mb-1">
+                    {site.plants.length === 0 ? t.needAtLeastOnePlant : t.needAllPlantNames}
+                  </p>
+                )}
                 <button
                   onClick={() => canAdvanceFromPlant && goPlantNext()}
                   disabled={!canAdvanceFromPlant}
