@@ -364,6 +364,27 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
       );
     });
 
+  // Filtered seed/sheet entries (used for display + total count)
+  const filteredSeedEntries = sheetLive
+    ? sheetEntries
+        .filter((p) => {
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.trim().toLowerCase();
+          const primarySp = p.seedlings[0]?.speciesName || '';
+          return primarySp.toLowerCase().includes(q) || p.district?.toLowerCase().includes(q) || p.upazila?.toLowerCase().includes(q) || p.village?.toLowerCase().includes(q) || p.farmerName?.toLowerCase().includes(q);
+        })
+        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+    : SEED_PLANTATIONS
+        .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+        .filter((p) => {
+          if (!searchQuery.trim()) return true;
+          const q = searchQuery.trim().toLowerCase();
+          return p.speciesName?.toLowerCase().includes(q) || p.district?.toLowerCase().includes(q) || p.upazila?.toLowerCase().includes(q) || p.caretaker?.toLowerCase().includes(q);
+        })
+        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila));
+
+  const totalVisibleCount = filteredSubmissions.length + filteredSeedEntries.length;
+
   const handleSaveEdit = useCallback(
     async (updated: PlantationSubmission) => {
       await saveSubmission(updated);
@@ -479,20 +500,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
             project palette) and shows a tooltip on hover; click for the
             full popup. */}
         {sheetLive
-          ? sheetEntries
-              .filter((p) => {
-                if (!searchQuery.trim()) return true;
-                const q = searchQuery.trim().toLowerCase();
-                const primarySp = p.seedlings[0]?.speciesName || '';
-                return (
-                  primarySp.toLowerCase().includes(q) ||
-                  p.district?.toLowerCase().includes(q) ||
-                  p.upazila?.toLowerCase().includes(q) ||
-                  p.village?.toLowerCase().includes(q) ||
-                  p.farmerName?.toLowerCase().includes(q)
-                );
-              })
-              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+          ? filteredSeedEntries
               .map((p, i) => {
               const primarySpecies = p.seedlings[0]?.speciesName || '';
               const speciesLabel =
@@ -592,19 +600,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
                 </CircleMarker>
               );
             })
-          : SEED_PLANTATIONS
-              .filter((p) => p.latitude !== 0 && p.longitude !== 0)
-              .filter((p) => {
-                if (!searchQuery.trim()) return true;
-                const q = searchQuery.trim().toLowerCase();
-                return (
-                  p.speciesName?.toLowerCase().includes(q) ||
-                  p.district?.toLowerCase().includes(q) ||
-                  p.upazila?.toLowerCase().includes(q) ||
-                  p.caretaker?.toLowerCase().includes(q)
-                );
-              })
-              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+          : filteredSeedEntries
               .map((p) => {
                 const mColor = markerColor(p.upazila, p.speciesName);
                 return (
@@ -753,7 +749,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
         activeUpazilas={activeUpazilas}
         onToggleUpazila={toggleUpazila}
         onClearUpazilas={() => setActiveUpazilas([])}
-        resultCount={filteredSubmissions.length}
+        resultCount={totalVisibleCount}
       />
       <NDVILegend visible={showLegend} />
       <CustomZoomControl mapRef={mapRef} />
