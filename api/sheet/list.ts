@@ -49,7 +49,7 @@ export default async function handler(req: any, res: any) {
     const data = await gasRes.json();
 
     cache = { fetchedAt: Date.now(), payload: data };
-    res.status(200).json({ ...data, cached: false });
+    res.status(200).json({ ...(data as object), cached: false });
   } catch (err: any) {
     if (cache) {
       res.status(200).json({ ...cache.payload, cached: true, stale: true, error: err.message });
