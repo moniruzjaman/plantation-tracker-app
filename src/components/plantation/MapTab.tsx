@@ -26,8 +26,11 @@ import { createEmptySubmission } from '../../types/plantation';
 // color-coding markers when the data lacks a formal plantTypeId.
 // Falls back to the upazila color system for submissions that do
 // have an upazila, but seed/sheet entries only have speciesName.
+//
+// All keyword lookups use NFC normalization to avoid Bengali Unicode
+// precomposed/decomposed mismatches (e.g. য় U+09DF vs য+্ U+09AF+U+09BC).
 
-const SPECIES_CATEGORY_COLORS: Record<string, string> = {
+const SPECIES_CATEGORY_COLORS_RAW: Record<string, string> = {
   // ফলদ (Fruit) — greens
   'আম': '#16a34a',
   'পেয়ারা': '#15803d',
@@ -57,22 +60,28 @@ const SPECIES_CATEGORY_COLORS: Record<string, string> = {
   'বেত': '#4d7c0f',
 };
 
+/** NFC-normalized species keywords: [[keyword, color]] for fast includes() lookup */
+const SPECIES_CATEGORY_COLORS: [string, string][] =
+  Object.entries(SPECIES_CATEGORY_COLORS_RAW).map(([k, v]) => [k.normalize('NFC'), v]);
+
 const DEFAULT_SPECIES_COLOR = '#047857'; // emerald-700, preserves existing palette for unknowns
 
-/** Infer a color from speciesName by checking for known keywords */
+/** Infer a color from speciesName by checking for known keywords (NFC-safe) */
 function colorForSpecies(speciesName: string): string {
   if (!speciesName) return DEFAULT_SPECIES_COLOR;
-  // Check each category keyword against the species name
-  for (const [keyword, color] of Object.entries(SPECIES_CATEGORY_COLORS)) {
-    if (speciesName.includes(keyword)) return color;
+  const norm = speciesName.normalize('NFC');
+  for (const [keyword, color] of SPECIES_CATEGORY_COLORS) {
+    if (norm.includes(keyword)) return color;
   }
   return DEFAULT_SPECIES_COLOR;
 }
 
 /** Determine marker color: prefer upazila color for real submissions,
- *  fall back to species-based category color for seed/sheet entries */
+ *  fall back to species-based category color for seed/sheet entries.
+ *  Both lookups are NFC-normalized. */
 function markerColor(upazila: string | undefined, speciesName: string): string {
-  if (upazila && UPAZILA_COLORS[upazila]) return UPAZILA_COLORS[upazila];
+  const normUp = upazila ? upazila.normalize('NFC') : '';
+  if (normUp && UPAZILA_COLORS[normUp]) return UPAZILA_COLORS[normUp];
   return colorForSpecies(speciesName);
 }
 
@@ -346,13 +355,16 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
     reloadSubmissions();
   }, [reloadSubmissions]);
 
+  const nfck = (s: string) => s.normalize('NFC');
+
   const toggleUpazila = useCallback((u: string) => {
-    setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
+    const norm = u.normalize('NFC');
+    setActiveUpazilas((prev) => (prev.includes(norm) ? prev.filter((x) => x !== norm) : [...prev, norm]));
   }, []);
 
   const filteredSubmissions = submissions
     .filter((s) => s.latitude && s.longitude)
-    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(nfck(s.upazila || '')))
     .filter((s) => {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.trim().toLowerCase();
@@ -373,7 +385,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           const primarySp = p.seedlings[0]?.speciesName || '';
           return primarySp.toLowerCase().includes(q) || p.district?.toLowerCase().includes(q) || p.upazila?.toLowerCase().includes(q) || p.village?.toLowerCase().includes(q) || p.farmerName?.toLowerCase().includes(q);
         })
-        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(nfck(p.upazila || '')))
     : SEED_PLANTATIONS
         .filter((p) => p.latitude !== 0 && p.longitude !== 0)
         .filter((p) => {
@@ -381,7 +393,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           const q = searchQuery.trim().toLowerCase();
           return p.speciesName?.toLowerCase().includes(q) || p.district?.toLowerCase().includes(q) || p.upazila?.toLowerCase().includes(q) || p.caretaker?.toLowerCase().includes(q);
         })
-        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila));
+        .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(nfck(p.upazila || '')));
 
   const totalVisibleCount = filteredSubmissions.length + filteredSeedEntries.length;
 

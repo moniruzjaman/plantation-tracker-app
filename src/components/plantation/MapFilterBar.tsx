@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Search, X, Palette } from 'lucide-react';
 import { KURIGRAM_UPAZILAS, colorForUpazila } from '../../utils/upazilaColors';
 
+const nfck = (s: string) => s.normalize('NFC');
+
 interface MapFilterBarProps {
   query: string;
   onQueryChange: (q: string) => void;
@@ -69,7 +71,7 @@ export default function MapFilterBar({
         {pillsOpen && (
           <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-100">
             {KURIGRAM_UPAZILAS.map((u) => {
-              const active = activeUpazilas.includes(u);
+              const active = activeUpazilas.includes(nfck(u));
               return (
                 <button
                   key={u}

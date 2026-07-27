@@ -4,7 +4,18 @@
  * officer can visually cluster/scan by area at a glance).
  *
  * Source list: src/data/geoData.ts -> DISTRICT_UPAZILAS['কুড়িগ্রাম']
+ *
+ * NOTE: All keys and lookups are NFC-normalized to avoid Bengali Unicode
+ * precomposed/decomposed mismatches (e.g. ড় U+09DC vs ড্ U+09A1+U+09BC)
+ * between the Google Sheet data, seedPlantations.ts, and this file.
  */
+
+// ---------- NFC normalization helper ----------
+// Bengali text can arrive in either precomposed (NFC) or decomposed (NFD)
+// form. JavaScript's === and String.includes() compare code units, so
+// "ফুলবাড়ী" (NFC: ড়=U+09DC) won't match "ফুলবাড়ী" (NFD: ড+্=U+09A1+U+09BC)
+// unless both sides are normalized to the same form.
+const nfck = (s: string): string => s.normalize('NFC');
 
 export const KURIGRAM_UPAZILAS = [
   'সদর',
@@ -18,7 +29,8 @@ export const KURIGRAM_UPAZILAS = [
   'চর রাজিবপুর',
 ] as const;
 
-export const UPAZILA_COLORS: Record<string, string> = {
+/** Build the color map with NFC-normalized keys. */
+const _RAW: Record<string, string> = {
   'কুড়িগ্রাম সদর': '#2d6a4f',
   'সদর': '#2d6a4f',             // alias — seed data shorthand for কুড়িগ্রাম সদর
   'নাগেশ্বরী': '#1d6fa4',
@@ -32,9 +44,15 @@ export const UPAZILA_COLORS: Record<string, string> = {
   'চর রাজিবপুর': '#8e44ad',  // alias — seed data uses full char name
 };
 
+/** NFC-normalized color lookup: guarantees ড় (precomposed) and ড্ (decomposed) both resolve. */
+export const UPAZILA_COLORS: Record<string, string> = {};
+for (const [k, v] of Object.entries(_RAW)) {
+  UPAZILA_COLORS[nfck(k)] = v;
+}
+
 export const DEFAULT_MARKER_COLOR = '#64748b'; // slate-500, fallback for unmatched/blank upazila
 
 export function colorForUpazila(upazila: string | undefined | null): string {
   if (!upazila) return DEFAULT_MARKER_COLOR;
-  return UPAZILA_COLORS[upazila] ?? DEFAULT_MARKER_COLOR;
+  return UPAZILA_COLORS[nfck(upazila)] ?? DEFAULT_MARKER_COLOR;
 }
