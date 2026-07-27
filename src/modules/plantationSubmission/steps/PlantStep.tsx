@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Sprout, Plus, X } from 'lucide-react';
 import PlantCard from '../components/PlantCard';
 import { createEmptyPlant, type PlantationSite } from '../types/submission';
