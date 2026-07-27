@@ -1,0 +1,636 @@
+     1→     1→import React, { useState, useCallback, useEffect, useRef, type JSX } from 'react';
+     2→     2→import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+     3→     3→import L from 'leaflet';
+     4→     4→import type { LatLngBounds, Map as LeafletMap } from 'leaflet';
+     5→     5→import 'leaflet/dist/leaflet.css';
+     6→     6→import { Cloud, RefreshCw, CheckCircle2, AlertTriangle, BarChart3, Plus, Minus, Crosshair, Loader2, Satellite, Trees } from 'lucide-react';
+     7→     7→import type { GeoState } from '../GeolocationIndicator';
+     8→     8→import {
+     9→     9→  type LayerId,
+    10→    10→  getLayerTiles,
+    11→    11→  NDVI_BANDS,
+    12→    12→  toBnNum,
+    13→    13→} from '../../utils/mapHelper';
+    14→    14→import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
+    15→    15→import { SEED_PLANTATIONS } from '../../data/seedPlantations';
+    16→    16→import { useSheetPlantations } from '../../hooks/useSheetPlantations';
+    17→    17→import { getSubmissions, saveSubmission } from '../../lib/db';
+    18→    18→import type { PlantationSubmission } from '../../types/plantation';
+    19→    19→import { colorForUpazila } from '../../utils/upazilaColors';
+    20→    20→import MapFilterBar from './MapFilterBar';
+    21→    21→import MapEditModal from './MapEditModal';
+    22→    22→
+    23→    23→// ---------- Fix #2: Leaflet default marker icon paths break with Vite bundling ----------
+    24→    24→delete (L.Icon.Default.prototype as any)._getIconUrl;
+    25→    25→L.Icon.Default.mergeOptions({
+    26→    26→  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+    27→    27→  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    28→    28→  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    29→    29→});
+    30→    30→
+    31→    31→// ---------- Layer labels (Bengali) ----------
+    32→    32→
+    33→    33→const LAYER_LABELS: Record<LayerId, string> = {
+    34→    34→  ndvi: '\uD83C\uDF3F NDVI',
+    35→    35→  evi: '\uD83C\uDF43 EVI',
+    36→    36→  satellite: '\uD83D\uDEF0\uFE0F \u09B8\u09CD\u09AF\u09BE\u099F\u09C7\u09B2\u09BE\u0987\u099F',
+    37→    37→  osm: '\uD83D\uDDFA\uFE0F \u09AE\u09BE\u09A8\u099A\u09BF\u09A4\u09CD\u09B0',
+    38→    38→};
+    39→    39→
+    40→    40→// ---------- Pipeline result ----------
+    41→    41→
+    42→    42→interface PipelineResult {
+    43→    43→  ndvi_mean: number;
+    44→    44→  evi_mean?: number;
+    45→    45→  healthy_pct: number;
+    46→    46→  stress_pct: number;
+    47→    47→  bare_pct: number;
+    48→    48→  area_ha: number;
+    49→    49→  source?: string;
+    50→    50→  ai_analysis?: string;
+    51→    51→}
+    52→    52→
+    53→    53→// NOTE: PipelineState is now imported from ./NDVISimulatorPanel to keep the
+    54→    54→// Map page pipeline button and the new NDVI Simulator panel in sync.
+    55→    55→
+    56→    56→// ---------- Sub-components ----------
+    57→    57→
+    58→    58→function LayerSwitcher({ active, onChange }: { active: LayerId; onChange: (l: LayerId) => void }) {
+    59→    59→  return (
+    60→    60→    <div className="absolute top-16 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
+    61→    61→      {(Object.keys(LAYER_LABELS) as LayerId[]).map((id) => (
+    62→    62→        <button
+    63→    63→          key={id}
+    64→    64→          onClick={() => onChange(id)}
+    65→    65→          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${
+    66→    66→            active === id ? 'bg-emerald-700 text-white border border-emerald-800' : 'text-gray-600 hover:bg-gray-100'
+    67→    67→          }`}
+    68→    68→        >
+    69→    69→          {LAYER_LABELS[id]}
+    70→    70→        </button>
+    71→    71→      ))}
+    72→    72→    </div>
+    73→    73→  );
+    74→    74→}
+    75→    75→
+    76→    76→function CloudPipelineButton({ state, onRun }: { state: PipelineState; onRun: () => void }) {
+    77→    77→  const config: Record<PipelineState, { icon: JSX.Element; ring: string; bg: string }> = {
+    78→    78→    idle: { icon: <Cloud size={18} />, ring: '', bg: 'bg-slate-600' },
+    79→    79→    running: { icon: <RefreshCw size={18} className="animate-spin" />, ring: 'ring-4 ring-amber-300/60 animate-pulse', bg: 'bg-amber-500' },
+    80→    80→    success: { icon: <CheckCircle2 size={18} />, ring: '', bg: 'bg-emerald-600' },
+    81→    81→    error: { icon: <AlertTriangle size={18} />, ring: '', bg: 'bg-red-500' },
+    82→    82→  };
+    83→    83→  const c = config[state];
+    84→    84→  return (
+    85→    85→    <button
+    86→    86→      onClick={onRun}
+    87→    87→      disabled={state === 'running'}
+    88→    88→      className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full text-white flex items-center justify-center shadow-lg transition-all ${c.bg} ${c.ring}`}
+    89→    89→      title="\u09B8\u09CD\u09AF\u09BE\u099F\u09C7\u09B2\u09BE\u0987\u099F \u09AC\u09BF\u09B6\u09CD\u09B2\u09C7\u09B7\u09A3 \u099A\u09BE\u09B2\u09BE\u09A8"
+    90→    90→    >
+    91→    91→      {c.icon}
+    92→    92→    </button>
+    93→    93→  );
+    94→    94→}
+    95→    95→
+    96→    96→function ResultOverlay({ result, onClose }: { result: PipelineResult; onClose: () => void }) {
+    97→    97→  const isDemo = !result.source || result.source === 'demo_estimate';
+    98→    98→  const colorFor = (v: number, goodHigh = true) => {
+    99→    99→    const good = goodHigh ? v >= 60 : v <= 15;
+   100→   100→    const warn = goodHigh ? v >= 35 : v <= 30;
+   101→   101→    return good ? 'text-emerald-600' : warn ? 'text-amber-600' : 'text-red-600';
+   102→   102→  };
+   103→   103→  return (
+   104→   104→    <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-[1000] w-48 sm:w-56 bg-white/95 backdrop-blur rounded-xl shadow-xl p-2.5 sm:p-3 space-y-1.5">
+   105→   105→      <div className="flex items-center justify-between">
+   106→   106→        <h4 className="text-[10px] sm:text-xs font-bold text-gray-700">বিশ্লেষণ ফলাফল</h4>
+   107→   107→        <button onClick={onClose} className="text-gray-400 text-xs cursor-pointer">✕</button>
+   108→   108→      </div>
+   109→   109→      {isDemo && (
+   110→   110→        <p className="text-[9px] sm:text-[10px] bg-amber-50 text-amber-700 rounded px-1.5 py-1">
+   111→   111→          ⚠️ ডেমো ডেটা — প্রকৃত স্যাটেলাইট বিশ্লেষণ নয়
+   112→   112→        </p>
+   113→   113→      )}
+   114→   114→      <div className="text-[10px] sm:text-xs space-y-1">
+   115→   115→        <div className="flex justify-between"><span className="text-gray-500">গড় NDVI</span><span className="font-semibold">{result.ndvi_mean.toFixed(2)}</span></div>
+   116→   116→        <div className="flex justify-between"><span className="text-gray-500">সুস্থ%</span><span className={`font-semibold ${colorFor(result.healthy_pct, true)}`}>{result.healthy_pct}%</span></div>
+   117→   117→        <div className="flex justify-between"><span className="text-gray-500">চাপগ্রস্ত%</span><span className={`font-semibold ${colorFor(result.stress_pct, false)}`}>{result.stress_pct}%</span></div>
+   118→   118→        <div className="flex justify-between"><span className="text-gray-500">নগ্ন%</span><span className="font-semibold text-gray-700">{result.bare_pct}%</span></div>
+   119→   119→        <div className="flex justify-between"><span className="text-gray-500">মোট হেক্টর</span><span className="font-semibold">{result.area_ha} ha</span></div>
+   120→   120→      </div>
+   121→   121→      {result.ai_analysis && <p className="text-[9px] sm:text-[10px] text-gray-500 border-t pt-1.5 leading-relaxed">{result.ai_analysis}</p>}
+   122→   122→    </div>
+   123→   123→  );
+   124→   124→}
+   125→   125→
+   126→   126→function NDVILegend({ visible }: { visible: boolean }) {
+   127→   127→  const [open, setOpen] = useState(true);
+   128→   128→  if (!visible) return null;
+   129→   129→  return (
+   130→   130→    <div className="absolute bottom-14 left-2 sm:left-3 z-[1000]">
+   131→   131→      {open ? (
+   132→   132→        <div className="bg-white/95 backdrop-blur rounded-lg shadow-lg p-2 sm:p-2.5 w-36 sm:w-40">
+   133→   133→          <div className="flex items-center justify-between mb-1.5">
+   134→   134→            <span className="text-[9px] sm:text-[10px] font-bold text-gray-600">NDVI মান</span>
+   135→   135→            <button onClick={() => setOpen(false)} className="text-gray-400 text-[10px] cursor-pointer">✕</button>
+   136→   136→          </div>
+   137→   137→          {NDVI_BANDS.map((b) => (
+   138→   138→            <div key={b.label} className="flex items-center gap-1.5 text-[9px] sm:text-[10px] py-0.5">
+   139→   139→              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: b.color }} />
+   140→   140→              <span className="text-gray-600 flex-1">{b.label}</span>
+   141→   141→              <span className="text-gray-400">{b.range}</span>
+   142→   142→            </div>
+   143→   143→          ))}
+   144→   144→        </div>
+   145→   145→      ) : (
+   146→   146→        <button onClick={() => setOpen(true)} className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 rounded-full shadow-lg flex items-center justify-center cursor-pointer">
+   147→   147→          <BarChart3 size={14} className="text-gray-600 sm:w-4 sm:h-4" />
+   148→   148→        </button>
+   149→   149→      )}
+   150→   150→    </div>
+   151→   151→  );
+   152→   152→}
+   153→   153→
+   154→   154→function BoundsTracker({ onBoundsChange }: { onBoundsChange: (b: LatLngBounds) => void }) {
+   155→   155→  const map = useMapEvents({
+   156→   156→    moveend: () => onBoundsChange(map.getBounds()),
+   157→   157→  });
+   158→   158→  return null;
+   159→   159→}
+   160→   160→
+   161→   161→function CustomZoomControl({ mapRef }: { mapRef: React.RefObject<LeafletMap | null> }) {
+   162→   162→  return (
+   163→   163→    <div className="absolute top-16 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
+   164→   164→      <button
+   165→   165→        onClick={() => mapRef.current?.zoomIn()}
+   166→   166→        className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
+   167→   167→        title="জুম ইন"
+   168→   168→      >
+   169→   169→        <Plus size={16} />
+   170→   170→      </button>
+   171→   171→      <button
+   172→   172→        onClick={() => mapRef.current?.zoomOut()}
+   173→   173→        className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
+   174→   174→        title="জুম আউট"
+   175→   175→      >
+   176→   176→        <Minus size={16} />
+   177→   177→      </button>
+   178→   178→    </div>
+   179→   179→  );
+   180→   180→}
+   181→   181→
+   182→   182→function BoundsOverlay({ bounds }: { bounds: LatLngBounds | null }) {
+   183→   183→  if (!bounds) return null;
+   184→   184→  return (
+   185→   185→    <div className="absolute inset-0 pointer-events-none z-[999] flex items-center justify-center">
+   186→   186→      <div className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-medium">
+   187→   187→        <Crosshair size={10} className="inline -mt-0.5 mr-1" />
+   188→   188→        বিশ্লেষণ এলাকা
+   189→   189→      </div>
+   190→   190→    </div>
+   191→   191→  );
+   192→   192→}
+   193→   193→
+   194→   194→function TileStatusIndicator({ loading, error }: { loading: boolean; error: boolean }) {
+   195→   195→  if (!loading && !error) return null;
+   196→   196→  return (
+   197→   197→    <div className="absolute bottom-14 right-2 sm:right-3 z-[1000]">
+   198→   198→      {loading && (
+   199→   199→        <div className="flex items-center gap-1.5 bg-white/95 backdrop-blur rounded-full shadow-lg px-3 py-1.5 text-[10px] text-gray-600">
+   200→   200→          <Loader2 size={12} className="animate-spin" />
+   201→   201→          টাইল লোড হচ্ছে...
+   202→   202→        </div>
+   203→   203→      )}
+   204→   204→      {error && (
+   205→   205→        <div className="flex items-center gap-1.5 bg-red-50/95 backdrop-blur rounded-full shadow-lg px-3 py-1.5 text-[10px] text-red-700">
+   206→   206→          <AlertTriangle size={12} />
+   207→   207→          টাইল লোড ব্যর্থ
+   208→   208→        </div>
+   209→   209→      )}
+   210→   210→    </div>
+   211→   211→  );
+   212→   212→}
+   213→   213→
+   214→   214→function useTileStatus(mapRef: React.RefObject<LeafletMap | null>) {
+   215→   215→  const [loading, setLoading] = useState(false);
+   216→   216→  const [error, setError] = useState(false);
+   217→   217→  const clearTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+   218→   218→
+   219→   219→  useEffect(() => {
+   220→   220→    const map = mapRef.current;
+   221→   221→    if (!map) return;
+   222→   222→
+   223→   223→    const onLoading = () => {
+   224→   224→      if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
+   225→   225→      setError(false);
+   226→   226→      setLoading(true);
+   227→   227→    };
+   228→   228→    const onLoad = () => {
+   229→   229→      setLoading(false);
+   230→   230→      setError(false);
+   231→   231→    };
+   232→   232→    const onTileError = () => {
+   233→   233→      setLoading(false);
+   234→   234→      setError(true);
+   235→   235→      clearTimeoutRef.current = setTimeout(() => setError(false), 5000);
+   236→   236→    };
+   237→   237→
+   238→   238→    map.on('tileloadstart', onLoading);
+   239→   239→    map.on('tileload', onLoad);
+   240→   240→    map.on('load', onLoad);
+   241→   241→    map.on('tileerror', onTileError);
+   242→   242→
+   243→   243→    return () => {
+   244→   244→      map.off('tileloadstart', onLoading);
+   245→   245→      map.off('tileload', onLoad);
+   246→   246→      map.off('load', onLoad);
+   247→   247→      map.off('tileerror', onTileError);
+   248→   248→      if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
+   249→   249→    };
+   250→   250→  }, [mapRef]);
+   251→   251→
+   252→   252→  return { loading, error };
+   253→   253→}
+   254→   254→
+   255→   255→// ---------- Main component ----------
+   256→   256→
+   257→   257→interface MapTabProps {
+   258→   258→  geoState: GeoState | null;
+   259→   259→  onMapReady?: (invalidate: () => void) => void;
+   260→   260→}
+   261→   261→
+   262→   262→const DEFAULT_CENTER: [number, number] = [25.805, 89.636];
+   263→   263→
+   264→   264→export default function MapTab({ geoState, onMapReady }: MapTabProps) {
+   265→   265→  const [activeLayer, setActiveLayer] = useState<LayerId>('ndvi');
+   266→   266→  const [pipelineState, setPipelineState] = useState<PipelineState>('idle');
+   267→   267→  const [result, setResult] = useState<PipelineResult | null>(null);
+   268→   268→  const [bounds, setBounds] = useState<LatLngBounds | null>(null);
+   269→   269→  const mapRef = useRef<LeafletMap | null>(null);
+   270→   270→  const containerRef = useRef<HTMLDivElement>(null);
+   271→   271→  const [mapKey, setMapKey] = useState(0);
+   272→   272→  // NDVI Simulator & Canopy Growth Tracker panel visibility
+   273→   273→  const [simulatorOpen, setSimulatorOpen] = useState(false);
+   274→   274→
+   275→   275→  // ---- Live Google Sheet data (App_Entry via Apps Script), replaces the
+   276→   276→  // frozen SEED_PLANTATIONS snapshot once it loads successfully ----
+   277→   277→  const { entries: sheetEntries, live: sheetLive } = useSheetPlantations();
+   278→   278→
+   279→   279→  // ---- Real plantation submissions layer (color-coded, click-to-edit) ----
+   280→   280→  const [submissions, setSubmissions] = useState<PlantationSubmission[]>([]);
+   281→   281→  const [editingSubmission, setEditingSubmission] = useState<PlantationSubmission | null>(null);
+   282→   282→  const [searchQuery, setSearchQuery] = useState('');
+   283→   283→  const [activeUpazilas, setActiveUpazilas] = useState<string[]>([]);
+   284→   284→
+   285→   285→  const reloadSubmissions = useCallback(() => {
+   286→   286→    getSubmissions().then(setSubmissions).catch(() => setSubmissions([]));
+   287→   287→  }, []);
+   288→   288→
+   289→   289→  useEffect(() => {
+   290→   290→    reloadSubmissions();
+   291→   291→  }, [reloadSubmissions]);
+   292→   292→
+   293→   293→  const toggleUpazila = useCallback((u: string) => {
+   294→   294→    setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
+   295→   295→  }, []);
+   296→   296→
+   297→   297→  const filteredSubmissions = submissions
+   298→   298→    .filter((s) => s.latitude && s.longitude)
+   299→   299→    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+   300→   300→    .filter((s) => {
+   301→   301→      if (!searchQuery.trim()) return true;
+   302→   302→      const q = searchQuery.trim().toLowerCase();
+   303→   303→      return (
+   304→   304→        s.village?.toLowerCase().includes(q) ||
+   305→   305→        s.caretakerName?.toLowerCase().includes(q) ||
+   306→   306→        s.upazila?.toLowerCase().includes(q) ||
+   307→   307→        s.seedlings.some((sd) => sd.speciesName?.toLowerCase().includes(q))
+   308→   308→      );
+   309→   309→    });
+   310→   310→
+   311→   311→  const handleSaveEdit = useCallback(
+   312→   312→    async (updated: PlantationSubmission) => {
+   313→   313→      await saveSubmission(updated);
+   314→   314→      setEditingSubmission(null);
+   315→   315→      reloadSubmissions();
+   316→   316→    },
+   317→   317→    [reloadSubmissions]
+   318→   318→  );
+   319→   319→
+   320→   320→  const center: [number, number] = geoState?.coords
+   321→   321→    ? [geoState.coords.latitude, geoState.coords.longitude]
+   322→   322→    : DEFAULT_CENTER;
+   323→   323→
+   324→   324→  const tiles = getLayerTiles(activeLayer);
+   325→   325→  const satelliteTiles = getLayerTiles('satellite');
+   326→   326→
+   327→   327→  const { loading: tileLoading, error: tileError } = useTileStatus(mapRef);
+   328→   328→
+   329→   329→  const runPipeline = useCallback(async () => {
+   330→   330→    setPipelineState('running');
+   331→   331→    const timeout = setTimeout(() => setPipelineState((s) => (s === 'running' ? 'error' : s)), 8000);
+   332→   332→    try {
+   333→   333→      const boundsPayload = bounds
+   334→   334→        ? [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]]
+   335→   335→        : null;
+   336→   336→      const endpoint = import.meta.env.VITE_GEE_PIPELINE_URL || '/api/gee-ndvi';
+   337→   337→      const res = await fetch(endpoint, {
+   338→   338→        method: 'POST',
+   339→   339→        headers: { 'Content-Type': 'application/json' },
+   340→   340→        body: JSON.stringify({
+   341→   341→          bounds: boundsPayload,
+   342→   342→          date_from: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
+   343→   343→          date_to: new Date().toISOString().split('T')[0],
+   344→   344→          indices: ['NDVI', 'EVI', 'LSWI'],
+   345→   345→        }),
+   346→   346→      });
+   347→   347→      if (!res.ok) throw new Error('Pipeline request failed');
+   348→   348→      const data = (await res.json()) as PipelineResult;
+   349→   349→      setResult(data);
+   350→   350→      setPipelineState('success');
+   351→   351→    } catch {
+   352→   352→      setPipelineState('error');
+   353→   353→    } finally {
+   354→   354→      clearTimeout(timeout);
+   355→   355→      setTimeout(() => setPipelineState('idle'), 8000);
+   356→   356→    }
+   357→   357→  }, [bounds]);
+   358→   358→
+   359→   359→  const showSatelliteUnderlay = activeLayer === 'ndvi' || activeLayer === 'evi';
+   360→   360→  const showLegend = activeLayer === 'ndvi' || activeLayer === 'evi';
+   361→   361→
+   362→   362→  const handleMapReady = useCallback((map: LeafletMap) => {
+   363→   363→    mapRef.current = map;
+   364→   364→  }, []);
+   365→   365→
+   366→   366→  // Register invalidateSize callback with parent App
+   367→   367→  useEffect(() => {
+   368→   368→    if (onMapReady) {
+   369→   369→      const invalidate = () => {
+   370→   370→        if (mapRef.current) {
+   371→   371→          mapRef.current.invalidateSize();
+   372→   372→        }
+   373→   373→      };
+   374→   374→      onMapReady(invalidate);
+   375→   375→    }
+   376→   376→  }, [onMapReady, mapRef.current]);
+   377→   377→
+   378→   378→  // Also auto-invalidate when the container becomes visible (backup)
+   379→   379→  useEffect(() => {
+   380→   380→    const el = containerRef.current;
+   381→   381→    if (!el) return;
+   382→   382→    const observer = new ResizeObserver(() => {
+   383→   383→      if (mapRef.current && el.offsetParent !== null) {
+   384→   384→        mapRef.current.invalidateSize();
+   385→   385→      }
+   386→   386→    });
+   387→   387→    observer.observe(el);
+   388→   388→    return () => observer.disconnect();
+   389→   389→  }, []);
+   390→   390→
+   391→   391→  return (
+   392→   392→    <div ref={containerRef} className="relative w-full h-full" style={{ minHeight: 0 }}>
+   393→   393→      <MapContainer
+   394→   394→        key={mapKey}
+   395→   395→        center={center}
+   396→   396→        zoom={12}
+   397→   397→        className="w-full h-full"
+   398→   398→        zoomControl={false}
+   399→   399→        ref={handleMapReady}
+   400→   400→        style={{ background: '#e5e7eb' }}
+   401→   401→      >
+   402→   402→        {showSatelliteUnderlay && (
+   403→   403→          <TileLayer
+   404→   404→            key="satellite-underlay"
+   405→   405→            url={satelliteTiles.url}
+   406→   406→            attribution={satelliteTiles.attribution}
+   407→   407→            opacity={0.4}
+   408→   408→          />
+   409→   409→        )}
+   410→   410→        <TileLayer
+   411→   411→          key={activeLayer}
+   412→   412→          url={tiles.url}
+   413→   413→          attribution={tiles.attribution}
+   414→   414→        />
+   415→   415→
+   416→   416→        {/* Plantation markers from the plantation submission system.
+   417→   417→            When the Apps Script live sheet sync (GAS_WEBHOOK_URL) is
+   418→   418→            configured and reachable, every App_Entry row is plotted here
+   419→   419→            (hundreds of live field submissions). If it's unavailable --
+   420→   420→            offline, not configured, or GAS is briefly down -- this falls
+   421→   421→            back to the frozen 36-row SEED_PLANTATIONS snapshot so the map
+   422→   422→            is never empty. Each circle marker is colored emerald (matches
+   423→   423→            project palette) and shows a tooltip on hover; click for the
+   424→   424→            full popup. */}
+   425→   425→        {sheetLive
+   426→   426→          ? sheetEntries.map((p, i) => {
+   427→   427→              const primarySpecies = p.seedlings[0]?.speciesName || '';
+   428→   428→              const speciesLabel =
+   429→   429→                p.seedlings.length > 1
+   430→   430→                  ? `${primarySpecies} +${p.seedlings.length - 1}`
+   431→   431→                  : primarySpecies || 'বৃক্ষরোপণ';
+   432→   432→              return (
+   433→   433→                <CircleMarker
+   434→   434→                  key={`sheet-${p.submissionId || i}`}
+   435→   435→                  center={[p.latitude, p.longitude]}
+   436→   436→                  radius={6}
+   437→   437→                  pathOptions={{
+   438→   438→                    color: '#047857',          // emerald-700 ring
+   439→   439→                    fillColor: '#10b981',       // emerald-500 fill
+   440→   440→                    fillOpacity: 0.75,
+   441→   441→                    weight: 2,
+   442→   442→                  }}
+   443→   443→                >
+   444→   444→                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+   445→   445→                    <div className="text-[10px] leading-tight">
+   446→   446→                      <div className="font-bold">{speciesLabel}</div>
+   447→   447→                      <div className="text-slate-600">
+   448→   448→                        {toBnNum(p.totalQuantity)} টি · {p.district} / {p.upazila}
+   449→   449→                      </div>
+   450→   450→                    </div>
+   451→   451→                  </Tooltip>
+   452→   452→                  <Popup>
+   453→   453→                    <div className="text-xs min-w-[180px]">
+   454→   454→                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+   455→   455→                        <Trees size={12} /> {speciesLabel}
+   456→   456→                      </div>
+   457→   457→                      <div className="space-y-0.5 text-[11px] text-slate-700">
+   458→   458→                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+   459→   459→                        {p.union && <div><b>ইউনিয়ন/গ্রাম:</b> {p.union} {p.village ? `/ ${p.village}` : ''}</div>}
+   460→   460→                        <div><b>সংখ্যা:</b> {toBnNum(p.totalQuantity)} টি</div>
+   461→   461→                        {p.plantingDate && <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>}
+   462→   462→                        {p.farmerName && (
+   463→   463→                          <div><b>কৃষক:</b> {p.farmerName}{p.farmerMobile ? ` (${p.farmerMobile})` : ''}</div>
+   464→   464→                        )}
+   465→   465→                        {p.saaoName && <div><b>SAAO:</b> {p.saaoName}</div>}
+   466→   466→                        {p.officerName && <div><b>মনিটরিং অফিসার:</b> {p.officerName}</div>}
+   467→   467→                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+   468→   468→                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+   469→   469→                        </div>
+   470→   470→                        <div className="text-[10px] text-emerald-600 mt-1">🔴 লাইভ শীট থেকে</div>
+   471→   471→                      </div>
+   472→   472→                    </div>
+   473→   473→                  </Popup>
+   474→   474→                </CircleMarker>
+   475→   475→              );
+   476→   476→            })
+   477→   477→          : SEED_PLANTATIONS
+   478→   478→              .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+   479→   479→              .map((p) => (
+   480→   480→                <CircleMarker
+   481→   481→                  key={`seed-${p.sl}`}
+   482→   482→                  center={[p.latitude, p.longitude]}
+   483→   483→                  radius={6}
+   484→   484→                  pathOptions={{
+   485→   485→                    color: '#047857',          // emerald-700 ring
+   486→   486→                    fillColor: '#10b981',       // emerald-500 fill
+   487→   487→                    fillOpacity: 0.75,
+   488→   488→                    weight: 2,
+   489→   489→                  }}
+   490→   490→                >
+   491→   491→                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+   492→   492→                    <div className="text-[10px] leading-tight">
+   493→   493→                      <div className="font-bold">{p.speciesName}</div>
+   494→   494→                      <div className="text-slate-600">
+   495→   495→                        {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+   496→   496→                      </div>
+   497→   497→                    </div>
+   498→   498→                  </Tooltip>
+   499→   499→                  <Popup>
+   500→   500→                    <div className="text-xs min-w-[180px]">
+   501→   501→                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+   502→   502→                        <Trees size={12} /> {p.speciesName}
+   503→   503→                      </div>
+   504→   504→                      <div className="space-y-0.5 text-[11px] text-slate-700">
+   505→   505→                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+   506→   506→                        <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
+   507→   507→                        <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
+   508→   508→                        <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
+   509→   509→                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+   510→   510→                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+   511→   511→                        </div>
+   512→   512→                        <div className="text-[10px] text-amber-600 mt-1">📦 অফলাইন সিড স্ন্যাপশট</div>
+   513→   513→                      </div>
+   514→   514→                    </div>
+   515→   515→                  </Popup>
+   516→   516→                </CircleMarker>
+   517→   517→              ))}
+   518→   518→
+   519→   519→        {/* Real plantation submissions, color-coded per upazila. Click a
+   520→   520→            marker to see the summary, then "সম্পাদনা" opens MapEditModal
+   521→   521→            for on-site corrections (location, seedling counts, caretaker
+   522→   522→            contact) — writes back through the same offline sync queue
+   523→   523→            used by the entry form. */}
+   524→   524→        {filteredSubmissions.map((s) => {
+   525→   525→          const color = colorForUpazila(s.upazila);
+   526→   526→          const totalCount = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
+   527→   527→          return (
+   528→   528→            <CircleMarker
+   529→   529→              key={s.id}
+   530→   530→              center={[s.latitude, s.longitude]}
+   531→   531→              radius={7}
+   532→   532→              pathOptions={{
+   533→   533→                color,
+   534→   534→                fillColor: color,
+   535→   535→                fillOpacity: 0.8,
+   536→   536→                weight: 2,
+   537→   537→              }}
+   538→   538→            >
+   539→   539→              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+   540→   540→                <div className="text-[10px] leading-tight">
+   541→   541→                  <div className="font-bold">{s.village}</div>
+   542→   542→                  <div className="text-slate-600">
+   543→   543→                    {toBnNum(totalCount)} টি চারা · {s.upazila}
+   544→   544→                  </div>
+   545→   545→                </div>
+   546→   546→              </Tooltip>
+   547→   547→              <Popup>
+   548→   548→                <div className="text-xs min-w-[180px] space-y-1">
+   549→   549→                  <div className="font-bold text-emerald-800 flex items-center gap-1">
+   550→   550→                    <Trees size={12} /> {s.village}
+   551→   551→                  </div>
+   552→   552→                  <div className="space-y-0.5 text-[11px] text-slate-700">
+   553→   553→                    <div><b>উপজেলা:</b> {s.upazila} · {s.union}</div>
+   554→   554→                    <div><b>মোট চারা:</b> {toBnNum(totalCount)} টি</div>
+   555→   555→                    <div><b>পরিচর্যাকারী:</b> {s.caretakerName || '—'}</div>
+   556→   556→                    <div className="font-mono text-[10px] text-slate-500">
+   557→   557→                      {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
+   558→   558→                    </div>
+   559→   559→                    {!s.synced && <div className="text-amber-600 text-[10px]">⏳ সিঙ্ক বাকি</div>}
+   560→   560→                  </div>
+   561→   561→                  <button
+   562→   562→                    onClick={() => setEditingSubmission(s)}
+   563→   563→                    className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+   564→   564→                  >
+   565→   565→                    সম্পাদনা
+   566→   566→                  </button>
+   567→   567→                </div>
+   568→   568→              </Popup>
+   569→   569→            </CircleMarker>
+   570→   570→          );
+   571→   571→        })}
+   572→   572→
+   573→   573→        <BoundsTracker onBoundsChange={setBounds} />
+   574→   574→      </MapContainer>
+   575→   575→
+   576→   576→      <LayerSwitcher active={activeLayer} onChange={setActiveLayer} />
+   577→   577→      <MapFilterBar
+   578→   578→        query={searchQuery}
+   579→   579→        onQueryChange={setSearchQuery}
+   580→   580→        activeUpazilas={activeUpazilas}
+   581→   581→        onToggleUpazila={toggleUpazila}
+   582→   582→        onClearUpazilas={() => setActiveUpazilas([])}
+   583→   583→        resultCount={filteredSubmissions.length}
+   584→   584→      />
+   585→   585→      <NDVILegend visible={showLegend} />
+   586→   586→      <CustomZoomControl mapRef={mapRef} />
+   587→   587→      <BoundsOverlay bounds={bounds} />
+   588→   588→      <TileStatusIndicator loading={tileLoading} error={tileError} />
+   589→   589→
+   590→   590→      {/* Existing compact cloud-pipeline FAB */}
+   591→   591→      <div className="absolute bottom-3 right-2 sm:bottom-4 sm:right-3 z-[1000]">
+   592→   592→        <CloudPipelineButton state={pipelineState} onRun={runPipeline} />
+   593→   593→      </div>
+   594→   594→
+   595→   595→      {/* NDVI Simulator & Canopy Growth Tracker — opens a side panel */}
+   596→   596→      <div className="absolute bottom-3 left-2 sm:bottom-4 sm:left-3 z-[1000]">
+   597→   597→        <button
+   598→   598→          onClick={() => setSimulatorOpen(true)}
+   599→   599→          className={`flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg transition-all active:scale-95 cursor-pointer text-xs font-bold ${
+   600→   600→            simulatorOpen
+   601→   601→              ? 'bg-emerald-800 text-white'
+   602→   602→              : 'bg-white/95 backdrop-blur text-emerald-800 hover:bg-emerald-50 border border-emerald-200'
+   603→   603→          }`}
+   604→   604→          title="উপগ্রহ এনডিভিআই সিমুলেটর ও বৃদ্ধি ট্র্যাকিং"
+   605→   605→        >
+   606→   606→          <Satellite size={14} className={simulatorOpen ? 'text-emerald-300' : 'text-emerald-600'} />
+   607→   607→          <span className="hidden sm:inline">NDVI সিমুলেটর</span>
+   608→   608→          <span className="sm:hidden">NDVI</span>
+   609→   609→        </button>
+   610→   610→      </div>
+   611→   611→
+   612→   612→      {result && pipelineState !== 'running' && (
+   613→   613→        <ResultOverlay result={result} onClose={() => setResult(null)} />
+   614→   614→      )}
+   615→   615→
+   616→   616→      {/* The full NDVI + Canopy Growth Tracker panel.
+   617→   617→          Shares pipelineState + runPipeline so the simulator's "Run Cloud
+   618→   618→          Pipeline" button and the existing compact FAB stay in sync. */}
+   619→   619→      <NDVISimulatorPanel
+   620→   620→        open={simulatorOpen}
+   621→   621→        onClose={() => setSimulatorOpen(false)}
+   622→   622→        pipelineState={pipelineState}
+   623→   623→        onRunPipeline={runPipeline}
+   624→   624→        liveNdvi={result?.ndvi_mean ?? null}
+   625→   625→      />
+   626→   626→
+   627→   627→      {editingSubmission && (
+   628→   628→        <MapEditModal
+   629→   629→          submission={editingSubmission}
+   630→   630→          onSave={handleSaveEdit}
+   631→   631→          onClose={() => setEditingSubmission(null)}
+   632→   632→        />
+   633→   633→      )}
+   634→   634→    </div>
+   635→   635→  );
+   636→   636→}
