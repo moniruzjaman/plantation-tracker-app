@@ -17,6 +17,9 @@
   "scripts": {
     "dev": "tsx server.ts",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:resolve": "prisma migrate resolve",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
@@ -39,6 +42,7 @@
     "@capacitor/core": "^8.3.0",
     "@capacitor/geolocation": "^8.2.0",
     "@google/genai": "^2.10.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@prisma/client": "^6.19.3",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",

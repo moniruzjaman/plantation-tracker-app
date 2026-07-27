@@ -12,11 +12,14 @@
 //   UserProfile  — Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts
 //   SeedSync     — Tracks when the workbook seed data was last pushed to DB
 //
-// Provider is SQLite for development. For production with PostGIS:
-//   1. Change provider to "postgresql"
-//   2. Update DATABASE_URL in .env
-//   3. Run: npx prisma migrate deploy
-//   4. Add spatial extensions: CREATE EXTENSION IF NOT EXISTS postgis;
+// Provider is PostgreSQL (Neon) — switched from SQLite on the neon-reconnect
+// branch. PostGIS is NOT yet enabled; once the Neon extension is available,
+// run `CREATE EXTENSION IF NOT EXISTS postgis;` against the database and add
+// spatial columns / indexes in a follow-up migration.
+//
+// Connection pattern:
+//   DATABASE_URL  → pooled connection string (pgBouncer, port 5432) for runtime
+//   DIRECT_URL    → direct connection string (no pooler) for migrations
 // =============================================================================
 
 generator client {
@@ -24,8 +27,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── Main Submission (17-column proforma, one row per field visit) ──────────
