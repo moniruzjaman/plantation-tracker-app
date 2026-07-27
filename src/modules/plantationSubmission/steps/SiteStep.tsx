@@ -1,5 +1,5 @@
-import { useCallback, useEffect } from 'react';
-import { MapPin, Leaf, Cloud, Info } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { MapPin, Leaf, Cloud, Info, Loader2 } from 'lucide-react';
 import GPSCapture from '../components/GPSCapture';
 import MapPicker from '../components/MapPicker';
 import { getNdviForPoint } from '../services/ndvi';
@@ -31,7 +31,7 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     addressSection: language === 'bn' ? 'ঠিকানা (স্বয়ংক্রিয় — সম্পাদনাযোগ্য)' : 'Address (auto-filled — editable)',
     geofenceSection: language === 'bn' ? 'জিও-ফেন্স মোড' : 'Geofence Mode',
     envSection: language === 'bn' ? 'পরিবেশগত তথ্য' : 'Environmental Intelligence',
-    manualHint: language === 'bn' ? 'অথবা ম্যাপে ট্যাপ করে/মার্কার টেনে ম্যানুয়ালি নির্বাচন করুন' : 'Or tap the map / drag the marker to set manually',
+    manualHint: language === 'bn' ? 'স্বয়ংক্রিয়ভাবে সেট করা হয়েছে — দরকার হলে মার্কার টান করে বা মানচিত্রে ট্যাপ করে সামান্য করুন' : 'Set automatically — adjust by dragging the marker or tapping the map if needed',
     modeUnset: language === 'bn'
       ? 'চারার সংখ্যা যোগ করার পর মোড নির্ধারিত হবে'
       : 'Mode will be finalized once plant quantities are added',
@@ -39,7 +39,9 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     carbon: language === 'bn' ? 'কার্বন প্রাক্কলন' : 'Carbon Estimate',
     loading: language === 'bn' ? 'লোড হচ্ছে...' : 'Loading...',
     noPointYet: language === 'bn' ? 'প্রথমে একটি অবস্থান নির্বাচন করুন' : 'Set a location first',
+    autoLocating: language === 'bn' ? 'স্বয়ংক্রিয়ভাবে অবস্থান খুঁজে পাওয়া হচ্ছে...' : 'Locating automatically...',
   };
+  const [autoLocating, setAutoLocating] = useState(false);
 
   const setLocation = useCallback(
     (updater: (prev: PlantationSite['location']) => PlantationSite['location']) => {
@@ -129,6 +131,31 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site.plants]);
 
+  // Auto-get GPS on mount if no location is set
+  useEffect(() => {
+    const hasPoint = site.location.latitude !== 0 || site.location.longitude !== 0;
+    if (hasPoint) return;
+
+    setAutoLocating(true);
+    if (!navigator.geolocation) {
+      setAutoLocating(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation((prev) => ({ ...prev, latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, manuallyAdjusted: false }));
+        setGeofencePoint(pos.coords.latitude, pos.coords.longitude);
+        setAutoLocating(false);
+      },
+      (err) => {
+        setAutoLocating(false);
+        // Optionally show an error, but we'll just leave it to the user to try manually
+        console.warn('Geolocation failed:', err);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [site.location.latitude, site.location.longitude, setLocation, setGeofencePoint]);
+
   const geofenceMode = deriveGeofenceMode(
     site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0),
     site.geofence.areaSqMeters
@@ -149,7 +176,13 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
       {/* GPS + Map */}
       <div className="space-y-2">
         <label className="text-xs font-semibold text-gray-500">{t.gpsSection}</label>
-        <GPSCapture onCapture={handleGpsCapture} language={language} />
+        {autoLocating ? (
+          <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-700 text-white font-semibold text-sm">
+            <Loader2 size={16} className="animate-spin" /> {t.autoLocating}
+          </div>
+        ) : (
+          <GPSCapture onCapture={handleGpsCapture} language={language} />
+        )}
         <p className="text-[10px] text-gray-400 text-center">{t.manualHint}</p>
         <MapPicker
           latitude={site.location.latitude}
