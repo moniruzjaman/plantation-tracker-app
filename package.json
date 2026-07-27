@@ -36,7 +36,9 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && tsc --noEmit -p api/tsconfig.json",
+    "lint:web": "tsc --noEmit",
+    "lint:api": "tsc --noEmit -p api/tsconfig.json"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.0",

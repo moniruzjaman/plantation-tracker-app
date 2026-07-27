@@ -16,11 +16,19 @@ webhook (`seed/AppsScript.gs`) and the `/api/sheet/*` routes are untouched.
 | `prisma/migrations/20260705181230_init/`                  | Moved to `docs/sqlite-migrations-archive/` so Prisma CLI ignores them.         |
 | `prisma/migrations/20260707130000_add_user_profile_and_seed_sync/` | Moved to `docs/sqlite-migrations-archive/`.                          |
 | `.env.example`                                            | Documented `DATABASE_URL` (pooled) + `DIRECT_URL` (direct) Neon patterns.      |
-| `package.json`                                            | Added `db:deploy`, `db:status`, `db:resolve` scripts + `@neondatabase/serverless` dep. |
+| `package.json`                                            | Added `db:deploy`, `db:status`, `db:resolve` scripts + `@neondatabase/serverless` dep + split `lint` into `lint:web` / `lint:api`. |
+| `api/_lib/`                                               | Shared library for Vercel serverless routes: `prisma.ts`, `auth.ts`, `ai.ts`, `helpers.ts`. Cached on `globalThis` so warm invocations reuse the Prisma + Gemini clients. |
+| `api/auth/`, `api/users/`, `api/seed/`, `api/sync.ts`, `api/submissions/`, `api/ai/`, `api/monitoring/`, `api/audit/`, `api/gee-ndvi.ts`, `api/health.ts` | Per-route Vercel serverless handlers, one file per route, lifted out of the monolithic `server.ts`. |
+| `api/tsconfig.json`                                       | Standalone TypeScript config for the `api/` folder — Vercel compiles each route independently, so this is just for local `npm run lint:api`. |
+| `tsconfig.json`                                           | Added `include` / `exclude` so the root config only typechecks `src/` + `server.ts` + `scripts/`. The api/ folder has its own config now. |
+| `api/sheet/list.ts`                                       | Tiny type-safety fix: cast `gasRes.json()` spread target to `object` so `npm run lint:api` passes. |
 | `NEON_RECONNECT.md`                                       | This file.                                                                     |
 
-`server.ts` and `api/sheet/` are **untouched** on this branch — splitting the
-monolith into Vercel serverless routes is a follow-up task (Option 2).
+`server.ts` (1,048 lines) is preserved in the repo for **local dev only**
+(`npm run dev` runs `tsx server.ts`). Vercel no longer needs it — every
+`/api/*` route now has a dedicated serverless handler under `api/`. This
+means each Neon query runs at the edge in a function that scales
+independently, instead of all routes sharing one Express process.
 
 ## 2. Local setup
 
@@ -163,8 +171,6 @@ rollback is one `git checkout` away.
 
 ## 8. Follow-up tasks (not on this branch)
 
-- **Option 2** — Split monolithic `server.ts` (1,048 lines) into Vercel
-  serverless routes under `api/`. The existing `api/sheet/` is the template.
 - **Option 3** — Sheets→Neon sync script: when `/api/sheet/webhook` writes
   a row to Sheets, also write it to Neon so valuable submissions have a
   durable copy that survives Sheets' 50k-row ceiling.
@@ -172,3 +178,77 @@ rollback is one `git checkout` away.
   uploads with presigned PUT to R2, store the resulting URL in `Photo.url`.
 - **Option 6** — Full codebase audit: typecheck, dead code, dependency
   vulnerabilities, Capacitor Android config drift.
+
+## 9. Serverless route map (Option 2 — done on this branch)
+
+All 20 routes that lived in `server.ts` are now individual Vercel serverless
+functions under `api/`. The shared code (Prisma singleton, allow-list loader,
+Gemini singleton, helpers) lives in `api/_lib/` — folders prefixed with `_`
+are excluded from Vercel's route auto-discovery.
+
+| HTTP method + path                          | File                                       |
+| ------------------------------------------- | ------------------------------------------ |
+| `GET  /api/health`                          | `api/health.ts`                            |
+| `GET  /api/sheet/list`                      | `api/sheet/list.ts` (pre-existing)         |
+| `GET  /api/auth/bootstrap`                  | `api/auth/bootstrap.ts`                    |
+| `POST /api/auth/profile`                    | `api/auth/profile.ts`                      |
+| `GET  /api/auth/me`                         | `api/auth/me.ts`                           |
+| `GET  /api/users`                           | `api/users/index.ts`                       |
+| `GET  /api/seed/sync-status`                | `api/seed/sync-status.ts`                  |
+| `POST /api/seed/sync`                       | `api/seed/sync.ts`                         |
+| `POST /api/sync`                            | `api/sync.ts`                              |
+| `GET  /api/submissions`                     | `api/submissions/index.ts`                 |
+| `GET  /api/submissions/stats`               | `api/submissions/stats.ts`                 |
+| `GET  /api/submissions/:id`                 | `api/submissions/[id].ts`                  |
+| `DELETE /api/submissions/:id`               | `api/submissions/[id].ts`                  |
+| `POST /api/ai/chat`                         | `api/ai/chat.ts`                           |
+| `POST /api/ai/diagnose`                     | `api/ai/diagnose.ts`                       |
+| `POST /api/gee-ndvi`                        | `api/gee-ndvi.ts`                          |
+| `POST /api/monitoring/revisit`              | `api/monitoring/revisit.ts`                |
+| `GET  /api/monitoring/:submissionId`        | `api/monitoring/[submissionId].ts`         |
+| `GET  /api/audit/carbon-stock`              | `api/audit/carbon-stock.ts`                |
+| `GET  /api/audit/export-geojson`            | `api/audit/export-geojson.ts`              |
+
+### Conventions
+
+- **Dynamic segments** use Next.js-style brackets: `[id].ts`, `[submissionId].ts`.
+  Vercel prefers literal segments over dynamic ones, so `/api/submissions/stats`
+  hits `stats.ts` (not `[id].ts`), and `/api/monitoring/revisit` hits
+  `revisit.ts` (not `[submissionId].ts`).
+- **`_lib` folder** is excluded from routing — Vercel's convention is that
+  folders/files prefixed with `_` are treated as private modules.
+- **Singletons** (Prisma, Gemini, allow-list) are cached on `globalThis` so
+  warm Lambda containers reuse them across invocations. This is critical
+  for Prisma — without it, every request would open a new connection to
+  Neon and exhaust the pool.
+- **CORS** is set per-handler via `setCorsHeaders(res)` from `_lib/helpers.ts`
+  (the `vercel.json` `Access-Control-Allow-Origin: *` header covers static
+  assets, but serverless functions need their own headers).
+- **Body parsing** uses `parseBody(req)` from `_lib/helpers.ts` which handles
+  both pre-parsed bodies (Vercel's default) and raw streams (some configs).
+- **TypeScript**: each route is compiled independently by Vercel's
+  `@vercel/node` builder. The `api/tsconfig.json` is only for local
+  `npm run lint:api` — Vercel ignores it at build time.
+
+### Smoke test after deploy
+
+Once Vercel deploys this branch:
+
+```bash
+# Health check (should return {"status":"ok","database":"connected",...})
+curl https://<your-vercel-domain>/api/health
+
+# Bootstrap (should return the allow-list from seed/admins.json)
+curl https://<your-vercel-domain>/api/auth/bootstrap
+
+# Submissions stats (should return {"status":"success","stats":{...}})
+curl https://<your-vercel-domain>/api/submissions/stats
+
+# GeoJSON export (should return a FeatureCollection, possibly empty)
+curl https://<your-vercel-domain>/api/audit/export-geojson
+```
+
+If any of these 404, check Vercel's "Functions" tab — the route file should
+appear there with a deployment log. Common failure: a route file imports
+something Vercel can't resolve (e.g. a Node-only module from a `src/` file
+that wasn't moved into `api/_lib/`).
