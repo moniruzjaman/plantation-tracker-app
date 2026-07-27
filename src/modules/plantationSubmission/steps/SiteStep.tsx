@@ -181,8 +181,61 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
             <Loader2 size={16} className="animate-spin" /> {t.autoLocating}
           </div>
         ) : (
-          <GPSCapture onCapture={handleGpsCapture} language={language} />
-        )}
+          <>
+            <GPSCapture onCapture={handleGpsCapture} language={language} />
+            {/* Manual GPS Input */}
+            <div className="space-y-2 mt-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Latitude</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={site.location.latitude}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (!isNaN(value)) {
+                        setLocation((prev) => ({ 
+                          ...prev, 
+                          latitude: value, 
+                          manuallyAdjusted: true 
+                        }));
+                        setGeofencePoint(value, site.location.longitude);
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Longitude</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={site.location.longitude}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (!isNaN(value)) {
+                        setLocation((prev) => ({ 
+                          ...prev, 
+                          longitude: value, 
+                          manuallyAdjusted: true 
+                        }));
+                        setGeofencePoint(site.location.latitude, value);
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              {/* Token points indicator for GPS interaction */}
+              <div className="flex items-center gap-1 text-[9px] text-green-500">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full" title="Earned for GPS interaction"></div>
+                  <span>+10 pts for GPS interaction</span>
+                </div>
+              </div>
+            </>
+          )}
         <p className="text-[10px] text-gray-400 text-center">{t.manualHint}</p>
         <MapPicker
           latitude={site.location.latitude}

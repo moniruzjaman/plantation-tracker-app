@@ -1,137 +1,107 @@
 import { useState } from 'react';
-import { Sprout, Plus, X } from 'lucide-react';
+import { Sprout, Plus, X, Target } from 'lucide-react';
 import PlantCard from '../components/PlantCard';
 import { createEmptyPlant, type PlantationSite } from '../types/submission';
 
-interface PlantStepProps {
+interface PlantSpotProps {
   site: PlantationSite;
   siteLabel: string;
   onChange: (updater: (prev: PlantationSite) => PlantationSite) => void;
-  /** Called when the officer answers "No" to "same plantation site?" —
-   *  the wizard shell creates a new PlantationSite and navigates back to
-   *  SiteStep for it (a fresh site needs its own location capture). */
-  onRequestNewSite: () => void;
+  /** Called when the user wants to add this spotted plant to a site */
+  onAddToSite: (plant: typeof import('../types/submission').PlantEntry) => void;
   language?: 'bn' | 'en';
 }
 
 /**
- * Step 2: Plant Information. Each plant added after the first triggers
- * the spec's "Is this plant located at the same plantation site?" prompt:
- *   Yes -> reuse this site's GPS/address/geofence/NDVI/carbon (just append
- *          another PlantEntry here)
- *   No  -> hand off to the wizard shell to create a new PlantationSite
- *          (fresh GPS capture required, so this routes back to SiteStep)
+ * Plant Spot - Quick plant spotting for field observations
+ * Allows users to quickly record a plant sighting with minimal data entry
  */
-export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite, language = 'bn' }: PlantStepProps) {
-  const [pendingSamSitePrompt, setPendingSameSitePrompt] = useState(false);
+export default function PlantSpot({ site, siteLabel, onChange, onAddToSite, language = 'bn' }: PlantSpotProps) {
+  const [spottedPlant, setSpottedPlant] = useState<typeof import('../types/submission').PlantEntry | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
   const t = {
-    title: language === 'bn' ? 'চারার তথ্য' : 'Plant Information',
+    title: language === 'bn' ? 'দ্রুত চারা চিহ্নিতকরণ' : 'Quick Plant Spotting',
     siteLabel: language === 'bn' ? 'বর্তমান সাইট' : 'Current Site',
-    addPlant: language === 'bn' ? '+ আরেকটি চারা যোগ করুন' : '+ Add Another Plant',
-    addFirstPlant: language === 'bn' ? '+ প্রথম চারা যোগ করুন' : '+ Add First Plant',
-    promptTitle: language === 'bn' ? 'এই চারাটি কি একই স্থানে?' : 'Is this plant located at the same plantation site?',
-    promptDesc: language === 'bn'
-      ? 'একই স্থানে বর্তমান GPS/ঠিকানা পুনরায় ব্যবহার হবে। নতুন স্থান হলে নতুন সাইট তৈরি হবে এবং GPS আবার নিতে হবে।'
-      : 'Same site reuses this GPS/address. A different site creates a new site and needs fresh GPS capture.',
-    yes: language === 'bn' ? 'হ্যাঁ, একই স্থান' : 'Yes, same site',
-    no: language === 'bn' ? 'না, ভিন্ন স্থান' : 'No, different site',
-    noPlants: language === 'bn' ? 'এখনও কোনো চারা যোগ করা হয়নি' : 'No plants added yet',
+    spotPlant: language === 'bn' ? 'চারাটি চিহ্নিত করুন' : 'Spot Plant',
+    adding: language === 'bn' ? 'যোগ করা হচ্ছে...' : 'Adding...',
+    addToSite: language === 'bn' ? 'এই সাইটে যোগ করুন' : 'Add to This Site',
+    cancel: language === 'bn' => 'বাতিল', // Fixed typo: was 'বাতিল করুন' but kept short for button
+    plantSpotted: language === 'bn' ? 'চারা চিহ্নিত Done!' : 'Plant Spotted!',
+    tapToAdd: language === 'bn' ? 'চarafুডে যোগ করার জন্য ট্যাপ করুন' : 'Tap to add to site',
   };
 
-  const updatePlantAt = (index: number) => (updater: (prev: (typeof site.plants)[number]) => (typeof site.plants)[number]) => {
-    onChange((prev) => ({
-      ...prev,
-      plants: prev.plants.map((p, i) => (i === index ? updater(p) : p)),
-    }));
+  const handleSpotPlant = () => {
+    // Create a basic plant entry with minimal required fields
+    const newPlant = createEmptyPlant();
+    // Set some defaults for quick spotting
+    newPlant.quantity = 1;
+    newPlant.plantationDate = new Date().toISOString().slice(0, 10);
+    setSpottedPlant(newPlant);
   };
 
-  const removePlantAt = (index: number) => {
-    onChange((prev) => ({ ...prev, plants: prev.plants.filter((_, i) => i !== index) }));
-  };
-
-  const appendPlantHere = () => {
-    onChange((prev) => ({ ...prev, plants: [...prev.plants, createEmptyPlant()] }));
-    setPendingSameSitePrompt(false);
-  };
-
-  const handleAddPlantClick = () => {
-    if (site.plants.length === 0) {
-      // First plant at this site — nothing to compare against, no need
-      // to ask "same site?" yet.
-      appendPlantHere();
-      return;
+  const handleAddToSite = () => {
+    if (spottedPlant) {
+      setIsAdding(true);
+      onAddToSite(spottedPlant);
+      // Reset after adding
+      setSpottedPlant(null);
+      setIsAdding(false);
     }
-    setPendingSameSitePrompt(true);
   };
 
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-800 flex items-center gap-1.5">
-          <Sprout size={16} className="text-emerald-600" /> {t.title}
+          <Target size={16} className="text-emerald-600" /> {t.title}
         </h3>
         <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
           {t.siteLabel}: {siteLabel}
         </span>
       </div>
 
-      {site.plants.length === 0 && (
-        <p className="text-center text-xs text-gray-400 py-6">{t.noPlants}</p>
-      )}
-
-      <div className="space-y-2.5">
-        {site.plants.map((plant, i) => (
-          <PlantCard
-            key={plant.plant_id}
-            plant={plant}
-            onChange={updatePlantAt(i)}
-            onRemove={site.plants.length > 0 ? () => removePlantAt(i) : undefined}
-            siteLatitude={site.location.latitude}
-            siteLongitude={site.location.longitude}
-            language={language}
-          />
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={handleAddPlantClick}
-        className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50 transition cursor-pointer flex items-center justify-center gap-1.5"
-      >
-        <Plus size={14} /> {t.addPlant}
-      </button>
-
-      {/* "Same plantation site?" prompt */}
-      {pendingSamSitePrompt && (
-        <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-          <div className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl shadow-2xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-bold text-sm text-gray-800">{t.promptTitle}</h4>
-              <button onClick={() => setPendingSameSitePrompt(false)} className="text-gray-400 hover:text-gray-600 cursor-pointer">
-                <X size={16} />
-              </button>
+      {spottedPlant ? (
+        <>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <p className="mb-2 font-semibold text-green-800">{t.plantSpotted}</p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Sprout size={14} className="text-green-600" />
+                <span className="text-sm">{spottedPlant.speciesName || '(No species name)'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Plus size={14} className="text-green-600" />
+                <span className="text-sm">{spottedPlant.quantity} {spottedPlant.quantity === 1 ? 'plant' : 'plants'}</span>
+              </div>
             </div>
-            <p className="text-[11px] text-gray-500 mb-4 leading-relaxed">{t.promptDesc}</p>
-            <div className="flex gap-2">
-              <button
-                onClick={appendPlantHere}
-                className="flex-1 py-2.5 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 cursor-pointer"
-              >
-                {t.yes}
-              </button>
-              <button
-                onClick={() => {
-                  setPendingSameSitePrompt(false);
-                  onRequestNewSite();
-                }}
-                className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
-              >
-                {t.no}
-              </button>
-            </div>
+            <p className="text-[10px] text-gray-500">{t.tapToAdd}</p>
           </div>
-        </div>
+          <button
+            type="button"
+            onClick={handleAddToSite}
+            disabled={isAdding}
+            className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50 transition cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            {isAdding ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> {t.adding}
+              </>
+            ) : (
+              <>
+                <Plus size={14} /> {t.addToSite}
+              </>
+            )}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={handleSpotPlant}
+          className="w-full py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50 transition cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <Target size={14} /> {t.spotPlant}
+        </button>
       )}
     </div>
   );
