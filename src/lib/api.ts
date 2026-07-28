@@ -112,3 +112,30 @@ export async function syncToServer(drafts: PlantationSubmission[]): Promise<{
     body: JSON.stringify({ drafts }),
   });
 }
+
+/** POST /api/sync/pg — push local drafts to PostgreSQL PlantationEntry table */
+export async function syncToPostgres(drafts: PlantationSubmission[]): Promise<{
+  syncedCount: number;
+  xpBonus: number;
+  greenTokens: number;
+  totalSeedlings: number;
+  message: string;
+} | null> {
+  return apiFetch('/api/sync/pg', {
+    method: 'POST',
+    body: JSON.stringify({ drafts }),
+  });
+}
+
+/** GET /api/sync/pg/status — PostgreSQL sync status check */
+export async function fetchPgSyncStatus(): Promise<{
+  status: string;
+  tables: {
+    plantation_entries: number;
+    officers: number;
+    custom_upazila: number;
+    growth_log: number;
+  };
+} | null> {
+  return apiFetch('/api/sync/pg/status');
+}
