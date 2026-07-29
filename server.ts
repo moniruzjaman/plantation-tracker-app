@@ -1,7 +1,20 @@
 import "dotenv/config";
-import express from "express";
-import path from "path";
+
+// ─── DATABASE_URL override ────────────────────────────────────────────────────
+// When running in sandbox environments, DATABASE_URL may be pre-set to SQLite.
+// Force PostgreSQL if .env contains a postgres:// URL.
 import fs from "fs";
+import path from "path";
+try {
+  const envPath = path.join(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    const match = envContent.match(/DATABASE_URL="?(postgres:\/\/[^"\n]+)/);
+    if (match) process.env.DATABASE_URL = match[1];
+  }
+} catch { /* ignore — use whatever is already set */ }
+
+import express from "express";
 import crypto from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { createServer as createViteServer } from "vite";
@@ -558,6 +571,177 @@ async function startServer() {
     }
   });
 
+  // ─── POST /api/sync/pg — Sync IndexedDB → PlantationEntry (PostgreSQL) ──
+  // Maps client-side PlantationSubmission to the flat PlantationEntry table
+  // that mirrors the Google Sheets workbook schema.
+  // Idempotent: uses appSubmissionId for dedup.
+  app.post("/api/sync/pg", async (req, res) => {
+    try {
+      const { drafts } = req.body;
+      if (!Array.isArray(drafts) || drafts.length === 0) {
+        res.status(400).json({ error: "Invalid payload. 'drafts' must be a non-empty array." });
+        return;
+      }
+
+      let newlySyncedCount = 0;
+      let totalSeedlings = 0;
+      let totalXPBonus = 0;
+      let greenTokensAwarded = 0;
+      const errors: string[] = [];
+
+      for (const draft of drafts) {
+        try {
+          // Idempotent: skip if appSubmissionId already exists
+          const existing = await prisma.plantationEntry.findUnique({
+            where: { appSubmissionId: draft.id },
+          });
+          if (existing) {
+            console.log(`[Sync/PG] Skipping duplicate: ${draft.id}`);
+            continue;
+          }
+
+          // Aggregate seedlings for flat storage
+          const seedlings = draft.seedlings || [];
+          const totalCount = seedlings.reduce((sum: number, s: any) => sum + (parseInt(s.count) || 0), 0);
+
+          // First photo's URL and hash for quick reference
+          const firstPhoto = draft.photos?.[0];
+
+          await prisma.plantationEntry.create({
+            data: {
+              appSubmissionId: draft.id,
+              submittedAt: draft.timestamp ? new Date(draft.timestamp) : new Date(),
+              division: draft.division || null,
+              region: draft.region || null,
+              district: draft.district || null,
+              upazila: draft.upazila || null,
+              unionName: draft.union || null,
+              village: draft.village || null,
+              block: draft.blockName || null,
+              locationType: null,
+              seedlingSource: draft.nurserySourceName || null,
+              latitude: draft.latitude || null,
+              longitude: draft.longitude || null,
+              plantingDate: draft.plantationDate ? new Date(draft.plantationDate) : null,
+              speciesName: totalCount > 0
+                ? seedlings.map((s: any) => `${s.speciesName}(${s.count})`).join(', ')
+                : null,
+              speciesCategory: seedlings.length > 0 ? (seedlings[0].plantTypeId || null) : null,
+              quantity: totalCount > 0 ? totalCount : null,
+              photoUrl: firstPhoto?.url || null,
+              photoSha256: firstPhoto?.sha256 || null,
+              farmerName: draft.caretakerName || null,
+              farmerMobile: draft.caretakerMobile || null,
+              saaoName: draft.saaoName || null,
+              saaoMobile: draft.saaoMobile || null,
+              monitoringOfficerName: draft.monitoringOfficerName || null,
+              monitoringOfficerMobile: draft.monitoringOfficerMobile || null,
+              remarks: draft.remarks || null,
+              verificationHash: draft.treeSerial || null,
+              syncedAt: new Date(),
+            },
+          });
+
+          newlySyncedCount++;
+          totalSeedlings += totalCount;
+          totalXPBonus += 50;
+          greenTokensAwarded += Math.max(1, Math.floor(totalCount / 10));
+        } catch (draftErr: any) {
+          const msg = draftErr?.message || 'Unknown error';
+          errors.push(`${draft.id}: ${msg}`);
+          console.error(`[Sync/PG] Failed for ${draft.id}:`, msg);
+        }
+      }
+
+      console.log(`[Sync/PG] ${newlySyncedCount}/${drafts.length} synced, ${totalSeedlings} seedlings, ${errors.length} errors`);
+
+      res.json({
+        status: "success",
+        syncedCount: newlySyncedCount,
+        totalSeedlings,
+        xpBonus: totalXPBonus,
+        greenTokens: greenTokensAwarded,
+        errors: errors.length > 0 ? errors : undefined,
+        timestamp: Date.now(),
+        message: errors.length > 0
+          ? `${newlySyncedCount}টি সিঙ্ক হয়েছে, ${errors.length}টি ব্যর্থ`
+          : `সফলভাবে ${newlySyncedCount}টি জরিপ ডাটাবেসে সংরক্ষিত হয়েছে। +${totalXPBonus} এক্সপি এবং ${greenTokensAwarded} সবুজ টোকেন!`,
+      });
+    } catch (err: any) {
+      console.error("[Sync/PG] Fatal error:", err);
+      res.status(500).json({ error: err.message || "Failed to sync to PostgreSQL" });
+    }
+  });
+
+  // ─── POST /api/sync/officer — Sync UserProfile → Officer (PostgreSQL) ───
+  app.post("/api/sync/officer", async (req, res) => {
+    try {
+      const { profile } = req.body;
+      if (!profile || typeof profile !== 'object') {
+        res.status(400).json({ error: "Invalid payload. 'profile' object required." });
+        return;
+      }
+
+      let officer;
+      if (profile.email) {
+        officer = await prisma.officer.upsert({
+          where: { email: profile.email },
+          update: {
+            name: profile.name || null,
+            mobile: profile.mobile || null,
+            shortTitle: profile.designation || null,
+            title: profile.designation || null,
+            district: profile.district || null,
+            upazila: profile.upazila || null,
+          },
+          create: {
+            appSubmissionId: `profile-${profile.id || Date.now()}`,
+            name: profile.name || '',
+            mobile: profile.mobile || null,
+            email: profile.email,
+            shortTitle: profile.designation || null,
+            title: profile.designation || null,
+            district: profile.district || null,
+            upazila: profile.upazila || null,
+            submittedAt: new Date(),
+          },
+        });
+      }
+
+      res.json({
+        status: "success",
+        officer: officer ? { id: officer.id, name: officer.name } : null,
+        message: officer ? `অফিসার প্রোফাইল সিঙ্ক সফল: ${officer.name}` : 'কোনো ইমেইল প্রদান করা হয়নি',
+      });
+    } catch (err: any) {
+      console.error("[Sync/Officer] Error:", err);
+      res.status(500).json({ error: err.message || "Failed to sync officer profile" });
+    }
+  });
+
+  // ─── GET /api/sync/pg/status — PostgreSQL sync status check ────────────
+  app.get("/api/sync/pg/status", async (req, res) => {
+    try {
+      const entryCount = await prisma.plantationEntry.count();
+      const officerCount = await prisma.officer.count();
+      const upazilaCount = await prisma.customUpazila.count();
+      const growthLogCount = await prisma.growthLog.count();
+
+      res.json({
+        status: "connected",
+        tables: {
+          plantation_entries: entryCount,
+          officers: officerCount,
+          custom_upazila: upazilaCount,
+          growth_log: growthLogCount,
+        },
+        timestamp: Date.now(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", error: err.message });
+    }
+  });
+
   // ─── GET /api/submissions — Dashboard data ────────────────────────────────
   // Returns paginated submissions with seedling + photo counts.
   // Query params: ?district=X&upazila=X&synced=true&limit=50&offset=0
@@ -983,8 +1167,11 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Full-Stack Plantation Server running on http://0.0.0.0:${PORT}`);
-    console.log(`[DB] SQLite: prisma/dev.db`);
+    console.log(`[DB] ${process.env.DATABASE_URL?.startsWith('postgres') ? 'PostgreSQL' : process.env.DATABASE_URL || 'unknown'}`);
     console.log(`[API] POST /api/sync — sync submissions to DB`);
+    console.log(`[API] POST /api/sync/pg — sync submissions to PostgreSQL PlantationEntry`);
+    console.log(`[API] POST /api/sync/officer — sync user profile to Officer`);
+    console.log(`[API] GET  /api/sync/pg/status — PostgreSQL table counts`);
     console.log(`[API] GET  /api/submissions — list with filters`);
     console.log(`[API] GET  /api/submissions/stats — aggregate dashboard data`);
     console.log(`[API] GET  /api/submissions/:id — single submission detail`);
