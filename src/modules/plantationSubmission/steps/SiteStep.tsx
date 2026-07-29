@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { MapPin, Leaf, Cloud, Info, Loader2 } from 'lucide-react';
 import GPSCapture from '../components/GPSCapture';
 import MapPicker from '../components/MapPicker';
@@ -15,31 +15,31 @@ interface SiteStepProps {
 }
 
 const FIELD_ORDER: { key: keyof PlantationSite['location']; label: { bn: string; en: string } }[] = [
-  { key: 'division', label: { bn: 'বিভাগ', en: 'Division' } },
-  { key: 'district', label: { bn: 'জেলা', en: 'District' } },
-  { key: 'upazila', label: { bn: 'উপজেলা', en: 'Upazila' } },
-  { key: 'union', label: { bn: 'ইউনিয়ন', en: 'Union' } },
-  { key: 'villageOrRoad', label: { bn: 'গ্রাম/রাস্তা', en: 'Village/Road' } },
-  { key: 'postalCode', label: { bn: 'পোস্ট কোড', en: 'Postal Code' } },
-  { key: 'fullAddress', label: { bn: 'সম্পূর্ণ ঠিকানা', en: 'Full Address' } },
+  { key: 'division', label: { bn: 'à¦¬à¦¿à¦­à¦¾à¦—', en: 'Division' } },
+  { key: 'district', label: { bn: 'à¦œà§‡à¦²à¦¾', en: 'District' } },
+  { key: 'upazila', label: { bn: 'à¦‰à¦ªà¦œà§‡à¦²à¦¾', en: 'Upazila' } },
+  { key: 'union', label: { bn: 'à¦‡à¦‰à¦¨à¦¿à¦¯à¦¼à¦¨', en: 'Union' } },
+  { key: 'villageOrRoad', label: { bn: 'à¦—à§à¦°à¦¾à¦®/à¦°à¦¾à¦¸à§à¦¤à¦¾', en: 'Village/Road' } },
+  { key: 'postalCode', label: { bn: 'à¦ªà§‹à¦¸à§à¦Ÿ à¦•à§‹à¦¡', en: 'Postal Code' } },
+  { key: 'fullAddress', label: { bn: 'à¦¸à¦®à§à¦ªà§‚à¦°à§à¦£ à¦ à¦¿à¦•à¦¾à¦¨à¦¾', en: 'Full Address' } },
 ];
 
 export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepProps) {
   const t = {
-    title: language === 'bn' ? 'স্থানের তথ্য' : 'Plantation Site Information',
-    gpsSection: language === 'bn' ? 'অবস্থান নির্ধারণ' : 'Location',
-    addressSection: language === 'bn' ? 'ঠিকানা (স্বয়ংক্রিয় — সম্পাদনাযোগ্য)' : 'Address (auto-filled — editable)',
-    geofenceSection: language === 'bn' ? 'জিও-ফেন্স মোড' : 'Geofence Mode',
-    envSection: language === 'bn' ? 'পরিবেশগত তথ্য' : 'Environmental Intelligence',
-    manualHint: language === 'bn' ? 'স্বয়ংক্রিয়ভাবে সেট করা হয়েছে — দরকার হলে মার্কার টান করে বা মানচিত্রে ট্যাপ করে সামান্য করুন' : 'Set automatically — adjust by dragging the marker or tapping the map if needed',
+    title: language === 'bn' ? 'à¦¸à§à¦¥à¦¾à¦¨à§‡à¦° à¦¤à¦¥à§à¦¯' : 'Plantation Site Information',
+    gpsSection: language === 'bn' ? 'à¦…à¦¬à¦¸à§à¦¥à¦¾à¦¨ à¦¨à¦¿à¦°à§à¦§à¦¾à¦°à¦£' : 'Location',
+    addressSection: language === 'bn' ? 'à¦ à¦¿à¦•à¦¾à¦¨à¦¾ (à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼ â€” à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¨à¦¾à¦¯à§‹à¦—à§à¦¯)' : 'Address (auto-filled â€” editable)',
+    geofenceSection: language === 'bn' ? 'à¦œà¦¿à¦“-à¦«à§‡à¦¨à§à¦¸ à¦®à§‹à¦¡' : 'Geofence Mode',
+    envSection: language === 'bn' ? 'à¦ªà¦°à¦¿à¦¬à§‡à¦¶à¦—à¦¤ à¦¤à¦¥à§à¦¯' : 'Environmental Intelligence',
+    manualHint: language === 'bn' ? 'à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼à¦­à¦¾à¦¬à§‡ à¦¸à§‡à¦Ÿ à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡ â€” à¦¦à¦°à¦•à¦¾à¦° à¦¹à¦²à§‡ à¦®à¦¾à¦°à§à¦•à¦¾à¦° à¦Ÿà¦¾à¦¨ à¦•à¦°à§‡ à¦¬à¦¾ à¦®à¦¾à¦¨à¦šà¦¿à¦¤à§à¦°à§‡ à¦Ÿà§à¦¯à¦¾à¦ª à¦•à¦°à§‡ à¦¸à¦¾à¦®à¦¾à¦¨à§à¦¯ à¦•à¦°à§à¦¨' : 'Set automatically â€” adjust by dragging the marker or tapping the map if needed',
     modeUnset: language === 'bn'
-      ? 'চারার সংখ্যা যোগ করার পর মোড নির্ধারিত হবে'
+      ? 'à¦šà¦¾à¦°à¦¾à¦° à¦¸à¦‚à¦–à§à¦¯à¦¾ à¦¯à§‹à¦— à¦•à¦°à¦¾à¦° à¦ªà¦° à¦®à§‹à¦¡ à¦¨à¦¿à¦°à§à¦§à¦¾à¦°à¦¿à¦¤ à¦¹à¦¬à§‡'
       : 'Mode will be finalized once plant quantities are added',
     ndvi: language === 'bn' ? 'NDVI' : 'NDVI',
-    carbon: language === 'bn' ? 'কার্বন প্রাক্কলন' : 'Carbon Estimate',
-    loading: language === 'bn' ? 'লোড হচ্ছে...' : 'Loading...',
-    noPointYet: language === 'bn' ? 'প্রথমে একটি অবস্থান নির্বাচন করুন' : 'Set a location first',
-    autoLocating: language === 'bn' ? 'স্বয়ংক্রিয়ভাবে অবস্থান খুঁজে পাওয়া হচ্ছে...' : 'Locating automatically...',
+    carbon: language === 'bn' ? 'à¦•à¦¾à¦°à§à¦¬à¦¨ à¦ªà§à¦°à¦¾à¦•à§à¦•à¦²à¦¨' : 'Carbon Estimate',
+    loading: language === 'bn' ? 'à¦²à§‹à¦¡ à¦¹à¦šà§à¦›à§‡...' : 'Loading...',
+    noPointYet: language === 'bn' ? 'à¦ªà§à¦°à¦¥à¦®à§‡ à¦à¦•à¦Ÿà¦¿ à¦…à¦¬à¦¸à§à¦¥à¦¾à¦¨ à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¨ à¦•à¦°à§à¦¨' : 'Set a location first',
+    autoLocating: language === 'bn' ? 'à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼à¦­à¦¾à¦¬à§‡ à¦…à¦¬à¦¸à§à¦¥à¦¾à¦¨ à¦–à§à¦à¦œà§‡ à¦ªà¦¾à¦“à¦¯à¦¼à¦¾ à¦¹à¦šà§à¦›à§‡...' : 'Locating automatically...',
   };
   const [autoLocating, setAutoLocating] = useState(false);
 
@@ -162,9 +162,9 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
   );
 
   const modeLabel: Record<string, { bn: string; en: string }> = {
-    single_tree: { bn: '🌳 একক গাছ', en: '🌳 Single Tree' },
-    small_plantation: { bn: '🌱 ছোট বাগান', en: '🌱 Small Plantation' },
-    orchard: { bn: '🏞️ বাগান/বড় প্লট (পলিগন প্রয়োজন)', en: '🏞️ Orchard/Large Plot (polygon required)' },
+    single_tree: { bn: 'ðŸŒ³ à¦à¦•à¦• à¦—à¦¾à¦›', en: 'ðŸŒ³ Single Tree' },
+    small_plantation: { bn: 'ðŸŒ± à¦›à§‹à¦Ÿ à¦¬à¦¾à¦—à¦¾à¦¨', en: 'ðŸŒ± Small Plantation' },
+    orchard: { bn: 'ðŸžï¸ à¦¬à¦¾à¦—à¦¾à¦¨/à¦¬à¦¡à¦¼ à¦ªà§à¦²à¦Ÿ (à¦ªà¦²à¦¿à¦—à¦¨ à¦ªà§à¦°à¦¯à¦¼à§‹à¦œà¦¨)', en: 'ðŸžï¸ Orchard/Large Plot (polygon required)' },
   };
 
   return (
@@ -181,8 +181,61 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
             <Loader2 size={16} className="animate-spin" /> {t.autoLocating}
           </div>
         ) : (
-          <GPSCapture onCapture={handleGpsCapture} language={language} />
-        )}
+          <>
+            <GPSCapture onCapture={handleGpsCapture} language={language} />
+            {/* Manual GPS Input */}
+            <div className="space-y-2 mt-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Latitude</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={site.location.latitude}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (!isNaN(value)) {
+                        setLocation((prev) => ({ 
+                          ...prev, 
+                          latitude: value, 
+                          manuallyAdjusted: true 
+                        }));
+                        setGeofencePoint(value, site.location.longitude);
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-400 mb-0.5 block">Longitude</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    value={site.location.longitude}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (!isNaN(value)) {
+                        setLocation((prev) => ({ 
+                          ...prev, 
+                          longitude: value, 
+                          manuallyAdjusted: true 
+                        }));
+                        setGeofencePoint(site.location.latitude, value);
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              {/* Token points indicator for GPS interaction */}
+              <div className="flex items-center gap-1 text-[9px] text-green-500">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full" title="Earned for GPS interaction"></div>
+                  <span>+10 pts for GPS interaction</span>
+                </div>
+              </div>
+            </>
+          )}
         <p className="text-[10px] text-gray-400 text-center">{t.manualHint}</p>
         <MapPicker
           latitude={site.location.latitude}
@@ -220,7 +273,7 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
         {site.plants.length === 0 && <p className="text-[10px] text-emerald-600 mt-0.5">{t.modeUnset}</p>}
       </div>
 
-      {/* Environmental intelligence — read-only */}
+      {/* Environmental intelligence â€” read-only */}
       <div className="grid grid-cols-2 gap-2">
         <div className="bg-gray-50 rounded-xl p-3">
           <label className="text-[10px] font-semibold text-gray-500 flex items-center gap-1 mb-1">
@@ -233,7 +286,7 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
           ) : site.environmental.ndvi !== null ? (
             <p className="text-lg font-black text-emerald-700">{site.environmental.ndvi.toFixed(2)}</p>
           ) : (
-            <p className="text-[11px] text-gray-400">—</p>
+            <p className="text-[11px] text-gray-400">â€”</p>
           )}
         </div>
         <div className="bg-gray-50 rounded-xl p-3">
@@ -247,10 +300,11 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
               {toBnNum(Math.round(site.environmental.carbonEstimateTons * 100) / 100)} <span className="text-xs font-normal">t</span>
             </p>
           ) : (
-            <p className="text-[11px] text-gray-400">—</p>
+            <p className="text-[11px] text-gray-400">â€”</p>
           )}
         </div>
       </div>
     </div>
   );
 }
+
