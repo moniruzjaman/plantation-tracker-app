@@ -10,27 +10,27 @@
   "_tokenBoostFields": ["nid", "jobId", "designation", "district", "upazila"],
   "users": [
     {
-      "email": "moniruzjaman@dae.gov.bd",
+      "email": "mithun.hstu@gmail.com",
       "role": "admin",
       "name": "মনিরুজ্জামান",
       "mobile": "",
-      "designation": "Deputy Project Director",
+      "designation": "Additional Deputy Director",
       "district": "কুড়িগ্রাম",
       "upazila": "",
-      "notes": "Project lead / repo owner. Replace with real DAE email before production deploy."
+      "notes": "Project lead / repo owner."
     },
     {
-      "email": "ddo.kurigram@dae.gov.bd",
+      "email": "ddaekurigram@gmail.com",
       "role": "admin",
       "name": "",
       "mobile": "",
-      "designation": "Deputy Director of Agriculture (DDA)",
+      "designation": "Deputy Director, DAE",
       "district": "কুড়িগ্রাম",
       "upazila": "",
-      "notes": "District DDA — fallback admin. Replace with real email before deploy."
+      "notes": "District DDA — fallback admin."
     },
     {
-      "email": "uae.kurigram-sadar@dae.gov.bd",
+      "email": "uaosadarkurigram@gmail.com",
       "role": "cadre",
       "name": "",
       "mobile": "",
@@ -40,7 +40,7 @@
       "notes": "Upazila Agriculture Officer, Kurigram Sadar — monitoring officer cadre."
     },
     {
-      "email": "uae.bhurungamari@dae.gov.bd",
+      "email": "uao.bhurungamari2018@gmail.com",
       "role": "cadre",
       "name": "",
       "mobile": "",
@@ -50,7 +50,7 @@
       "notes": "Upazila Agriculture Officer, Bhurungamari."
     },
     {
-      "email": "uae.rajarhat@dae.gov.bd",
+      "email": "uaorajarhat@gmail.com",
       "role": "cadre",
       "name": "",
       "mobile": "",
