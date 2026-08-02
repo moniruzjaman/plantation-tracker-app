@@ -91,6 +91,13 @@ export interface PlantEntry {
   /** Max 3 photos per plant entry, per spec. */
   photos: PhotoRecord[];
   validationStatus: 'pending' | 'validated' | 'rejected';
+  /** Set by the explicit Save button on PlantCard once the officer has
+   *  finished filling this entry in. Purely a UI/UX confirmation — the
+   *  entry is already persisted in the draft on every keystroke either
+   *  way — but it collapses the card to a compact summary so a long list
+   *  of plants doesn't stay a wall of open forms, and gives the officer a
+   *  clear "done with this one" checkpoint before moving to the next. */
+  confirmed?: boolean;
 }
 
 // ---------- Plantation Site ----------
@@ -193,6 +200,7 @@ export function createEmptyPlant(): PlantEntry {
     quantity: 1,
     photos: [],
     validationStatus: 'pending',
+    confirmed: false,
   };
 }
 

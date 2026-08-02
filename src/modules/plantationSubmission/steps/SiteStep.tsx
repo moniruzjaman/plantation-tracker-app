@@ -7,6 +7,7 @@ import { getCarbonEstimateForPlants } from '../services/carbon';
 import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 import type { PlantationSite } from '../types/submission';
 import { toBnNum } from '../../../utils/mapHelper';
+import { roundCoord, formatCoord } from '../utils/coords';
 
 interface SiteStepProps {
   site: PlantationSite;
@@ -40,6 +41,9 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     loading: language === 'bn' ? 'লোড হচ্ছে...' : 'Loading...',
     noPointYet: language === 'bn' ? 'প্রথমে একটি অবস্থান নির্বাচন করুন' : 'Set a location first',
     autoLocating: language === 'bn' ? 'স্বয়ংক্রিয়ভাবে অবস্থান খুঁজে পাওয়া হচ্ছে...' : 'Locating automatically...',
+    capturedCoords: language === 'bn' ? 'ধারণকৃত GPS কো-অর্ডিনেট (৭ দশমিক ঘর নির্ভুলতা)' : 'Captured GPS coordinates (7-decimal precision)',
+    lat: language === 'bn' ? 'অক্ষাংশ' : 'Latitude',
+    lng: language === 'bn' ? 'দ্রাঘিমাংশ' : 'Longitude',
   };
   const [autoLocating, setAutoLocating] = useState(false);
 
@@ -143,8 +147,10 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLocation((prev) => ({ ...prev, latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy, manuallyAdjusted: false }));
-        setGeofencePoint(pos.coords.latitude, pos.coords.longitude);
+        const lat = roundCoord(pos.coords.latitude);
+        const lng = roundCoord(pos.coords.longitude);
+        setLocation((prev) => ({ ...prev, latitude: lat, longitude: lng, accuracy: pos.coords.accuracy, manuallyAdjusted: false }));
+        setGeofencePoint(lat, lng);
         setAutoLocating(false);
       },
       (err) => {
@@ -188,6 +194,15 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
           onReverseGeocode={handleReverseGeocode}
           language={language}
         />
+        {hasPoint && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">
+            <p className="text-[9px] font-semibold text-gray-400 mb-1">{t.capturedCoords}</p>
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-gray-700">
+              <span>{t.lat}: {formatCoord(site.location.latitude)}</span>
+              <span>{t.lng}: {formatCoord(site.location.longitude)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Reverse-geocoded address fields, all editable */}

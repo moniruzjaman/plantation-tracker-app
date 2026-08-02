@@ -4,6 +4,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Loader2 } from 'lucide-react';
 import { reverseGeocode, type ReverseGeocodeResult } from '../services/nominatim';
+import { roundCoord } from '../utils/coords';
 
 // Leaflet's default marker icon paths break under Vite bundling — same fix
 // used in components/plantation/MapTab.tsx, kept consistent across the app.
@@ -68,20 +69,22 @@ export default function MapPicker({
 
   const handlePick = useCallback(
     (lat: number, lng: number) => {
-      onChange(lat, lng);
-      runReverseGeocode(lat, lng);
+      onChange(roundCoord(lat), roundCoord(lng));
     },
-    [onChange, runReverseGeocode]
+    [onChange]
   );
 
-  // Reverse-geocode once on initial mount if a point already exists
-  // (e.g. loaded from a draft) but hasn't been geocoded yet.
+  // Reverse-geocode whenever the point changes, from *any* source — map
+  // tap, marker drag, the device GPS capture button, or a pasted
+  // coordinate pair (all of those update `latitude`/`longitude` props,
+  // not just clicks inside this component). Previously this only ran on
+  // click/drag or once on mount, so GPS-button/paste captures silently
+  // skipped the division/district/upazila/village/postcode autofill.
   useEffect(() => {
-    if (hasPoint) {
-      runReverseGeocode(latitude, longitude);
-    }
+    if (!hasPoint) return;
+    runReverseGeocode(latitude, longitude);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [latitude, longitude, hasPoint]);
 
   return (
     <div className={`relative w-full ${heightClassName} rounded-xl overflow-hidden border border-gray-200`}>

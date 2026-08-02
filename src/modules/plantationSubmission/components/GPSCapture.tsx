@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Crosshair, Loader2, CheckCircle2, ClipboardPaste } from 'lucide-react';
+import { roundCoord } from '../utils/coords';
 
 interface GPSCaptureProps {
   onCapture: (lat: number, lng: number, accuracy: number) => void;
@@ -72,7 +73,7 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
       (pos) => {
         setStatus('success');
         setLastAccuracy(Math.round(pos.coords.accuracy));
-        onCapture(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        onCapture(roundCoord(pos.coords.latitude), roundCoord(pos.coords.longitude), pos.coords.accuracy);
       },
       () => {
         setStatus('error');
@@ -93,7 +94,7 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
     setPasteSuccess(true);
     // Accuracy is unknown for a manually entered point — use 0 as a sentinel
     // (SiteStep/MapPicker already treat manuallyAdjusted separately).
-    onCapture(parsed.lat, parsed.lng, 0);
+    onCapture(roundCoord(parsed.lat), roundCoord(parsed.lng), 0);
   };
 
   return (
