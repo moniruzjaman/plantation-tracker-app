@@ -20,3 +20,25 @@ export function roundLatLng(lat: number, lng: number): { lat: number; lng: numbe
 export function formatCoord(value: number): string {
   return value.toFixed(7);
 }
+
+// ---------- GPS accuracy quality gate ----------
+//
+// A `navigator.geolocation` reading's `accuracy` is a 1-sigma radius in
+// meters, not a hard guarantee — but a >30m reading is common evidence of
+// indoor/urban-canyon signal, an old cached fix, or a spoofed/emulated
+// location, any of which produces a plantation record whose "±30m" pin
+// could easily land on the wrong farmer's plot. Rather than silently
+// accepting whatever the device returns, a poor reading requires the
+// officer to either retry (device fixes usually improve within a few
+// seconds outdoors) or explicitly confirm they're using it anyway.
+
+export const GPS_ACCURACY_GOOD_M = 15;
+export const GPS_ACCURACY_WARN_M = 30;
+
+export type AccuracyQuality = 'good' | 'fair' | 'poor';
+
+export function classifyAccuracy(accuracyMeters: number): AccuracyQuality {
+  if (accuracyMeters <= GPS_ACCURACY_GOOD_M) return 'good';
+  if (accuracyMeters <= GPS_ACCURACY_WARN_M) return 'fair';
+  return 'poor';
+}

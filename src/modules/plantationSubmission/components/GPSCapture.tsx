@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import { Crosshair, Loader2, CheckCircle2, ClipboardPaste } from 'lucide-react';
-import { roundCoord } from '../utils/coords';
+import { Crosshair, Loader2, CheckCircle2, ClipboardPaste, AlertTriangle } from 'lucide-react';
+import { roundCoord, classifyAccuracy } from '../utils/coords';
 
 interface GPSCaptureProps {
   onCapture: (lat: number, lng: number, accuracy: number) => void;
+  /** Called once the reading is accuracy-confirmed: either it was good/fair
+   *  on its own, or the officer explicitly tapped "Use anyway" on a poor
+   *  reading. Callers use this to gate submission (see SiteStep /
+   *  PlantationSubmission's outstanding-checklist). */
+  onAccuracyConfirmed?: () => void;
   label?: string;
   language?: 'bn' | 'en';
 }
@@ -33,11 +38,18 @@ function parseCoordinatePair(raw: string): { lat: number; lng: number } | null {
  * copy-paste fallback for when the field officer already has coordinates
  * (e.g. shared over WhatsApp, read off another GPS device, or from a
  * previous visit) rather than capturing fresh from the device sensor.
+ *
+ * A reading worse than GPS_ACCURACY_WARN_M doesn't get silently accepted:
+ * the point is still applied immediately (so the map/address can update),
+ * but the officer must Retry or explicitly tap "Use anyway" before
+ * onAccuracyConfirmed fires — see the module doc-comment in utils/coords.ts
+ * for why.
  */
-export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCaptureProps) {
+export default function GPSCapture({ onCapture, onAccuracyConfirmed, label, language = 'bn' }: GPSCaptureProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [lastAccuracy, setLastAccuracy] = useState<number | null>(null);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
   const [pasteError, setPasteError] = useState<string | null>(null);
@@ -49,6 +61,11 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
     captured: language === 'bn' ? 'ক্যাপচার সম্পন্ন' : 'Captured',
     unsupported: language === 'bn' ? 'এই ডিভাইসে GPS সমর্থিত নয়' : 'GPS not supported on this device',
     failed: language === 'bn' ? 'অবস্থান পাওয়া যায়নি — আবার চেষ্টা করুন' : 'Could not get location — try again',
+    poorAccuracy: (m: number) => language === 'bn'
+      ? `নির্ভুলতা কম (±${m}মিটার)। খোলা আকাশের নিচে গিয়ে আবার চেষ্টা করুন, অথবা এই অবস্থানই ব্যবহার করুন।`
+      : `Low accuracy (±${m}m). Try again under open sky, or use this location anyway.`,
+    retry: language === 'bn' ? 'আবার চেষ্টা করুন' : 'Retry',
+    useAnyway: language === 'bn' ? 'এই অবস্থানই ব্যবহার করুন' : 'Use anyway',
     pasteToggle: language === 'bn' ? 'অথবা GPS কো-অর্ডিনেট পেস্ট/টাইপ করুন' : 'Or paste/type GPS coordinates',
     pasteLabel: language === 'bn' ? 'অক্ষাংশ, দ্রাঘিমাংশ (Latitude, Longitude)' : 'Latitude, Longitude',
     pasteHint: language === 'bn'
@@ -69,11 +86,22 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
     }
     setStatus('loading');
     setError(null);
+    setNeedsConfirm(false);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setStatus('success');
-        setLastAccuracy(Math.round(pos.coords.accuracy));
-        onCapture(roundCoord(pos.coords.latitude), roundCoord(pos.coords.longitude), pos.coords.accuracy);
+        const accuracy = Math.round(pos.coords.accuracy);
+        setLastAccuracy(accuracy);
+        const lat = roundCoord(pos.coords.latitude);
+        const lng = roundCoord(pos.coords.longitude);
+        onCapture(lat, lng, pos.coords.accuracy);
+
+        if (classifyAccuracy(pos.coords.accuracy) === 'poor') {
+          setNeedsConfirm(true);
+        } else {
+          setNeedsConfirm(false);
+          onAccuracyConfirmed?.();
+        }
       },
       () => {
         setStatus('error');
@@ -81,6 +109,11 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
+  };
+
+  const confirmAnyway = () => {
+    setNeedsConfirm(false);
+    onAccuracyConfirmed?.();
   };
 
   const applyPaste = () => {
@@ -92,9 +125,13 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
     }
     setPasteError(null);
     setPasteSuccess(true);
+    setNeedsConfirm(false);
     // Accuracy is unknown for a manually entered point — use 0 as a sentinel
-    // (SiteStep/MapPicker already treat manuallyAdjusted separately).
+    // (SiteStep/MapPicker already treat manuallyAdjusted separately). A
+    // manually-entered point is treated as officer-confirmed by
+    // definition — they typed/pasted it deliberately.
     onCapture(roundCoord(parsed.lat), roundCoord(parsed.lng), 0);
+    onAccuracyConfirmed?.();
   };
 
   return (
@@ -115,9 +152,43 @@ export default function GPSCapture({ onCapture, label, language = 'bn' }: GPSCap
         {status === 'loading' ? t.capturing : status === 'success' ? t.captured : label || t.capture}
       </button>
       {status === 'success' && lastAccuracy !== null && (
-        <p className="text-[10px] text-gray-400 mt-1 text-center">±{lastAccuracy}m</p>
+        <p
+          className={`text-[10px] mt-1 text-center font-semibold ${
+            classifyAccuracy(lastAccuracy) === 'good'
+              ? 'text-emerald-600'
+              : classifyAccuracy(lastAccuracy) === 'fair'
+                ? 'text-amber-600'
+                : 'text-red-600'
+          }`}
+        >
+          ±{lastAccuracy}m
+        </p>
       )}
       {error && <p className="text-[11px] text-red-600 mt-1 text-center">{error}</p>}
+
+      {needsConfirm && lastAccuracy !== null && (
+        <div className="mt-2 bg-red-50 border border-red-200 rounded-xl p-2.5 space-y-2">
+          <p className="text-[11px] text-red-700 flex items-start gap-1.5 leading-relaxed">
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" /> {t.poorAccuracy(lastAccuracy)}
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={capture}
+              className="flex-1 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 text-[11px] font-bold hover:bg-red-100 cursor-pointer"
+            >
+              {t.retry}
+            </button>
+            <button
+              type="button"
+              onClick={confirmAnyway}
+              className="flex-1 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 cursor-pointer"
+            >
+              {t.useAnyway}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Copy-paste GPS coordinates fallback */}
       <button

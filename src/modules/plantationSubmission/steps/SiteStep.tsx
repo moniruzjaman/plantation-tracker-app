@@ -7,7 +7,7 @@ import { getCarbonEstimateForPlants } from '../services/carbon';
 import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 import type { PlantationSite } from '../types/submission';
 import { toBnNum } from '../../../utils/mapHelper';
-import { roundCoord, formatCoord } from '../utils/coords';
+import { roundCoord, formatCoord, classifyAccuracy } from '../utils/coords';
 
 interface SiteStepProps {
   site: PlantationSite;
@@ -44,6 +44,11 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     capturedCoords: language === 'bn' ? 'ধারণকৃত GPS কো-অর্ডিনেট (৭ দশমিক ঘর নির্ভুলতা)' : 'Captured GPS coordinates (7-decimal precision)',
     lat: language === 'bn' ? 'অক্ষাংশ' : 'Latitude',
     lng: language === 'bn' ? 'দ্রাঘিমাংশ' : 'Longitude',
+    accuracyGood: language === 'bn' ? '✓ নির্ভুলতা ভালো' : '✓ Good accuracy',
+    accuracyFair: language === 'bn' ? '⚠ নির্ভুলতা মোটামুটি' : '⚠ Fair accuracy',
+    accuracyPoorUnconfirmed: language === 'bn'
+      ? '⚠ নির্ভুলতা কম এবং এখনো নিশ্চিত করা হয়নি — উপরে "এই অবস্থানই ব্যবহার করুন" চাপুন অথবা আবার চেষ্টা করুন'
+      : '⚠ Low accuracy, not yet confirmed — tap "Use anyway" above or retry',
   };
   const [autoLocating, setAutoLocating] = useState(false);
 
@@ -67,15 +72,25 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
 
   const handleGpsCapture = useCallback(
     (lat: number, lng: number, accuracy: number) => {
+      // accuracyConfirmed is set separately by GPSCapture's
+      // onAccuracyConfirmed callback (fires immediately for good/fair
+      // readings, or once the officer taps "Use anyway" for a poor one) —
+      // don't mark it confirmed here just because a reading arrived.
       setLocation((prev) => ({ ...prev, latitude: lat, longitude: lng, accuracy, manuallyAdjusted: false }));
       setGeofencePoint(lat, lng);
     },
     [setLocation, setGeofencePoint]
   );
 
+  const handleAccuracyConfirmed = useCallback(() => {
+    setLocation((prev) => ({ ...prev, accuracyConfirmed: true }));
+  }, [setLocation]);
+
   const handleMapPick = useCallback(
     (lat: number, lng: number) => {
-      setLocation((prev) => ({ ...prev, latitude: lat, longitude: lng, manuallyAdjusted: true }));
+      // A manually placed/dragged pin is inherently officer-confirmed —
+      // there's no device accuracy reading to gate on.
+      setLocation((prev) => ({ ...prev, latitude: lat, longitude: lng, manuallyAdjusted: true, accuracyConfirmed: true }));
       setGeofencePoint(lat, lng);
     },
     [setLocation, setGeofencePoint]
@@ -149,7 +164,20 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
       (pos) => {
         const lat = roundCoord(pos.coords.latitude);
         const lng = roundCoord(pos.coords.longitude);
-        setLocation((prev) => ({ ...prev, latitude: lat, longitude: lng, accuracy: pos.coords.accuracy, manuallyAdjusted: false }));
+        // Same accuracy gate as the manual GPSCapture button: a poor
+        // reading here still sets the point (so the map/address can
+        // start working) but leaves accuracyConfirmed false, so the
+        // officer sees the "low accuracy" state on the button below and
+        // has to retry or explicitly accept it before submitting.
+        const confirmed = classifyAccuracy(pos.coords.accuracy) !== 'poor';
+        setLocation((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng,
+          accuracy: pos.coords.accuracy,
+          manuallyAdjusted: false,
+          accuracyConfirmed: confirmed,
+        }));
         setGeofencePoint(lat, lng);
         setAutoLocating(false);
       },
@@ -184,9 +212,26 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
             <Loader2 size={16} className="animate-spin" /> {t.autoLocating}
           </div>
         ) : (
-          <GPSCapture onCapture={handleGpsCapture} language={language} />
+          <GPSCapture onCapture={handleGpsCapture} onAccuracyConfirmed={handleAccuracyConfirmed} language={language} />
         )}
         <p className="text-[10px] text-gray-400 text-center">{t.manualHint}</p>
+        {hasPoint && site.location.accuracy > 0 && (
+          <p
+            className={`text-[10px] text-center font-semibold ${
+              classifyAccuracy(site.location.accuracy) === 'good'
+                ? 'text-emerald-600'
+                : classifyAccuracy(site.location.accuracy) === 'fair'
+                  ? 'text-amber-600'
+                  : 'text-red-600'
+            }`}
+          >
+            {!site.location.accuracyConfirmed
+              ? t.accuracyPoorUnconfirmed
+              : classifyAccuracy(site.location.accuracy) === 'good'
+                ? t.accuracyGood
+                : t.accuracyFair}
+          </p>
+        )}
         <MapPicker
           latitude={site.location.latitude}
           longitude={site.location.longitude}

@@ -56,6 +56,11 @@ export interface SiteLocation {
   /** true once the officer has confirmed/edited the GPS-derived point,
    *  vs. still showing the raw auto-capture. */
   manuallyAdjusted: boolean;
+  /** true once the officer has explicitly acknowledged a poor-accuracy
+   *  (> GPSCapture's warn threshold) reading via "Use anyway" — see
+   *  components/GPSCapture.tsx. A good-accuracy reading doesn't need
+   *  this; it's only required as an override for a flagged-poor one. */
+  accuracyConfirmed: boolean;
 
   // Reverse-geocoded via Nominatim, all editable after autofill.
   division: string;
@@ -100,6 +105,25 @@ export interface PlantEntry {
   confirmed?: boolean;
 }
 
+// ---------- Fraud-proofing: duplicate-submission check ----------
+
+export interface DuplicateMatch {
+  submissionId: string;
+  officerName: string;
+  distanceMeters: number;
+  plantingDate: string;
+  speciesName: string;
+}
+
+export interface FraudCheck {
+  checking: boolean;
+  matches: DuplicateMatch[];
+  /** true once the officer has explicitly reviewed the flagged matches
+   *  and confirmed this is a genuinely new/different planting. */
+  acknowledged: boolean;
+  error?: string;
+}
+
 // ---------- Plantation Site ----------
 
 export interface PlantationSite {
@@ -107,6 +131,7 @@ export interface PlantationSite {
   location: SiteLocation;
   geofence: GeofenceData;
   environmental: EnvironmentalIntel;
+  fraudCheck: FraudCheck;
   plants: PlantEntry[];
 }
 
@@ -166,6 +191,7 @@ export function createEmptyLocation(): SiteLocation {
     longitude: 0,
     accuracy: 0,
     manuallyAdjusted: false,
+    accuracyConfirmed: false,
     division: '',
     district: '',
     upazila: '',
@@ -186,6 +212,11 @@ export function createEmptySite(): PlantationSite {
       ndviLoading: false,
       carbonEstimateTons: null,
       carbonLoading: false,
+    },
+    fraudCheck: {
+      checking: false,
+      matches: [],
+      acknowledged: false,
     },
     plants: [],
   };

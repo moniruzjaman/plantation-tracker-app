@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sprout, Plus, X } from 'lucide-react';
 import PlantCard from '../components/PlantCard';
 import PlantTypeSaveBar from '../components/PlantTypeSaveBar';
+import DuplicateWarningBanner from '../components/DuplicateWarningBanner';
 import { createEmptyPlant, type PlantationSite, type GeofenceMode } from '../types/submission';
 import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
+import { fetchEntriesForDuplicateCheck, detectDuplicates } from '../services/duplicateDetection';
 
 interface PlantStepProps {
   site: PlantationSite;
@@ -74,6 +76,65 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
     onChange((prev) => ({ ...prev, geofence: { ...prev.geofence, manualMode: mode, mode } }));
   };
 
+  // ---- Fraud-proofing: debounced duplicate-submission check ----
+  // Re-runs whenever the site's GPS point or any plant's species/date
+  // changes, debounced so it doesn't hit the network on every keystroke
+  // while typing a custom species name.
+  const hasPoint = site.location.latitude !== 0 || site.location.longitude !== 0;
+  const plantSignature = site.plants.map((p) => `${p.speciesName.trim().toLowerCase()}|${p.plantationDate}`).join(',');
+  const prevMatchIdsRef = useRef<string>('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!hasPoint || site.plants.length === 0) return;
+
+    debounceRef.current = setTimeout(() => {
+      onChange((prev) => ({
+        ...prev,
+        fraudCheck: { ...(prev.fraudCheck ?? { checking: false, matches: [], acknowledged: false }), checking: true, error: undefined },
+      }));
+      fetchEntriesForDuplicateCheck()
+        .then((entries) => {
+          const matches = detectDuplicates(site, entries);
+          const matchIds = matches.map((m) => m.submissionId).sort().join(',');
+          const changed = matchIds !== prevMatchIdsRef.current;
+          prevMatchIdsRef.current = matchIds;
+          onChange((prev) => ({
+            ...prev,
+            fraudCheck: {
+              ...(prev.fraudCheck ?? { checking: false, matches: [], acknowledged: false }),
+              checking: false,
+              matches,
+              // Only reset the acknowledgement when the actual set of
+              // flagged entries changes -- not on every debounce tick
+              // that happens to land on the same result.
+              acknowledged: changed ? matches.length === 0 : prev.fraudCheck?.acknowledged ?? false,
+            },
+          }));
+        })
+        .catch((err) => {
+          onChange((prev) => ({
+            ...prev,
+            fraudCheck: {
+              ...(prev.fraudCheck ?? { checking: false, matches: [], acknowledged: false }),
+              checking: false,
+              error: err?.message || 'failed',
+            },
+          }));
+        });
+    }, 900);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site.location.latitude, site.location.longitude, plantSignature, hasPoint]);
+
+  const handleAcknowledgeDuplicate = () => {
+    onChange((prev) => ({ ...prev, fraudCheck: { ...prev.fraudCheck, acknowledged: true } }));
+  };
+
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex items-center justify-between">
@@ -102,6 +163,10 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
           />
         ))}
       </div>
+
+      {site.fraudCheck && (site.fraudCheck.checking || site.fraudCheck.matches.length > 0) && (
+        <DuplicateWarningBanner fraudCheck={site.fraudCheck} onAcknowledge={handleAcknowledgeDuplicate} language={language} />
+      )}
 
       <button
         type="button"

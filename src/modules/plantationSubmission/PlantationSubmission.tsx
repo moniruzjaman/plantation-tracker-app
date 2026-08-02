@@ -94,6 +94,12 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
     needAtLeastOnePlant: language === 'bn' ? 'অন্তত একটি চারা যোগ করুন' : 'Add at least one plant',
     needAllPlantNames: language === 'bn' ? 'প্রতিটি চারার নাম দিন — খালি রাখা যাবে না' : 'Every plant needs a name',
     needPolygon: language === 'bn' ? 'জিও-ফেন্সে সীমানা আঁকুন' : 'Draw the boundary in Geofence',
+    needAccuracyConfirm: language === 'bn'
+      ? 'GPS নির্ভুলতা কম — স্থানের তথ্যে আবার চেষ্টা করুন বা নিশ্চিত করুন'
+      : 'Low GPS accuracy — retry or confirm it in Site Information',
+    needDuplicateAck: language === 'bn'
+      ? 'সম্ভাব্য পুনরাবৃত্তি এন্ট্রি রয়েছে — চারার তথ্যে পর্যালোচনা করে নিশ্চিত করুন'
+      : 'Possible duplicate entries flagged — review and confirm in Plant Information',
     readyToSubmit: language === 'bn' ? 'সব তথ্য সম্পূর্ণ — জমা দিতে প্রস্তুত' : 'All set — ready to submit',
     submittedTitle: language === 'bn' ? 'এন্ট্রি জমা হয়েছে' : 'Entry Submitted',
     submittedDesc: language === 'bn'
@@ -174,9 +180,11 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
   // checklist, since sections can now be opened/filled in any order.
   const outstanding: string[] = [];
   if (!hasLocation) outstanding.push(t.needLocation);
+  else if (site.location.accuracy > 0 && !site.location.accuracyConfirmed) outstanding.push(t.needAccuracyConfirm);
   if (site.plants.length === 0) outstanding.push(t.needAtLeastOnePlant);
   else if (!hasAllPlantNames) outstanding.push(t.needAllPlantNames);
   if (needsGeofenceSection && !geofenceSatisfied) outstanding.push(t.needPolygon);
+  if (site.fraudCheck?.matches.length && !site.fraudCheck.acknowledged) outstanding.push(t.needDuplicateAck);
   const canSubmit = outstanding.length === 0;
 
   const submissionInfo: SubmissionInfo = draft.submissionInfo ?? {
@@ -264,8 +272,8 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
             icon={<MapPin size={16} />}
             open={openSections.site}
             onToggle={() => toggleSection('site')}
-            complete={hasLocation}
-            needsAttention={!hasLocation}
+            complete={hasLocation && (site.location.accuracy === 0 || site.location.accuracyConfirmed)}
+            needsAttention={!hasLocation || (site.location.accuracy > 0 && !site.location.accuracyConfirmed)}
           >
             <SiteStep site={site} onChange={updateSiteAt(activeSiteIndex)} language={language} />
           </CollapsibleSection>
@@ -276,8 +284,8 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
             icon={<Sprout size={16} />}
             open={openSections.plant}
             onToggle={() => toggleSection('plant')}
-            complete={hasAllPlantNames}
-            needsAttention={site.plants.length === 0 || !hasAllPlantNames}
+            complete={hasAllPlantNames && !(site.fraudCheck?.matches.length && !site.fraudCheck.acknowledged)}
+            needsAttention={site.plants.length === 0 || !hasAllPlantNames || !!(site.fraudCheck?.matches.length && !site.fraudCheck.acknowledged)}
           >
             <PlantStep
               site={site}
