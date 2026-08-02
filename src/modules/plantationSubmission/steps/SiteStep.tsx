@@ -4,7 +4,7 @@ import GPSCapture from '../components/GPSCapture';
 import MapPicker from '../components/MapPicker';
 import { getNdviForPoint } from '../services/ndvi';
 import { getCarbonEstimateForPlants } from '../services/carbon';
-import { deriveGeofenceMode } from '../hooks/useGeofenceMode';
+import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 import type { PlantationSite } from '../types/submission';
 import { toBnNum } from '../../../utils/mapHelper';
 
@@ -156,10 +156,7 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     );
   }, [site.location.latitude, site.location.longitude, setLocation, setGeofencePoint]);
 
-  const geofenceMode = deriveGeofenceMode(
-    site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0),
-    site.geofence.areaSqMeters
-  );
+  const geofenceMode = resolveGeofenceMode(site);
 
   const modeLabel: Record<string, { bn: string; en: string }> = {
     single_tree: { bn: '🌳 একক গাছ', en: '🌳 Single Tree' },

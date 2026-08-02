@@ -28,6 +28,13 @@ export type GeofenceMode = 'single_tree' | 'small_plantation' | 'orchard';
 
 export interface GeofenceData {
   mode: GeofenceMode;
+  /** Set when the officer explicitly picks a plant-entry type (একক গাছ /
+   *  ছোট বাগান / বাগান) via the Plant section's save buttons, instead of
+   *  letting the quantity/area thresholds decide automatically. Once set,
+   *  this takes priority over the auto-derived mode — see
+   *  services/... resolveGeofenceMode(). Cleared is represented by
+   *  `undefined`, which falls back to auto-derivation again. */
+  manualMode?: GeofenceMode;
   latitude: number;
   longitude: number;
   /** Small-plantation mode only — optional coverage radius in meters. */

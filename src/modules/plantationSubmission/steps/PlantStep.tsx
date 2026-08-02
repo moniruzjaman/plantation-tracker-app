@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Sprout, Plus, X } from 'lucide-react';
 import PlantCard from '../components/PlantCard';
-import { createEmptyPlant, type PlantationSite } from '../types/submission';
+import PlantTypeSaveBar from '../components/PlantTypeSaveBar';
+import { createEmptyPlant, type PlantationSite, type GeofenceMode } from '../types/submission';
+import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 
 interface PlantStepProps {
   site: PlantationSite;
@@ -65,6 +67,13 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
     setPendingSameSitePrompt(true);
   };
 
+  const totalQuantity = site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const currentMode = resolveGeofenceMode(site);
+
+  const handleSavePlantType = (mode: GeofenceMode) => {
+    onChange((prev) => ({ ...prev, geofence: { ...prev.geofence, manualMode: mode, mode } }));
+  };
+
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex items-center justify-between">
@@ -101,6 +110,15 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
       >
         <Plus size={14} /> {t.addPlant}
       </button>
+
+      {site.plants.length > 0 && (
+        <PlantTypeSaveBar
+          totalQuantity={totalQuantity}
+          currentMode={currentMode}
+          onSave={handleSavePlantType}
+          language={language}
+        />
+      )}
 
       {/* "Same plantation site?" prompt */}
       {pendingSamSitePrompt && (
