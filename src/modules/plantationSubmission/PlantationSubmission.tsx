@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Save, Loader2, Sparkles, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Save, Loader2, Sparkles, CheckCircle2, MapPin, Sprout, Fence, UserCircle2, ClipboardCheck } from 'lucide-react';
 import { useOfflineDraft } from './hooks/useOfflineDraft';
 import { useAuth } from '../../hooks/useAuth';
 import type { PlantationSubmission as LegacyPlantationSubmission } from '../../types/plantation';
@@ -8,7 +8,8 @@ import PlantStep from './steps/PlantStep';
 import GeoFenceStep from './steps/GeoFenceStep';
 import PersonnelStep from './steps/PersonnelStep';
 import ReviewStep from './steps/ReviewStep';
-import { deriveGeofenceMode } from './hooks/useGeofenceMode';
+import CollapsibleSection from './components/CollapsibleSection';
+import { resolveGeofenceMode } from './hooks/useGeofenceMode';
 import { routeToValidator, type ValidationTask } from './services/validationRouter';
 import { submitAllSites } from './services/flattenToLegacySubmission';
 import { createEmptySite, createEmptyPersonnel, type SubmissionInfo } from './types/submission';
@@ -23,13 +24,7 @@ interface PlantationSubmissionProps {
   onSubmitted?: (submissions: LegacyPlantationSubmission[]) => void;
 }
 
-type WizardStep = 'site' | 'plant' | 'geofence' | 'personnel' | 'review';
-
-// Maps each internal step onto one of the 4 progress dots shown in the UI
-// — 'geofence' is a conditional sub-step of Plant Information (only shown
-// for small_plantation/orchard modes), so it shares Plant's dot rather
-// than inventing a 5th, keeping the "Step X / 4" labeling from the spec.
-const PROGRESS_DOT: Record<WizardStep, number> = { site: 0, plant: 1, geofence: 1, personnel: 2, review: 3 };
+type SectionId = 'site' | 'plant' | 'geofence' | 'personnel' | 'review';
 
 /**
  * New Plantation Submission — wizard shell. All 4 spec phases now wired:
@@ -49,9 +44,28 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
   const { draft, loading, saving, updateDraft, setStatus } = useOfflineDraft();
   const { session } = useAuth();
   const [activeSiteIndex, setActiveSiteIndex] = useState(0);
-  const [wizardStep, setWizardStep] = useState<WizardStep>('site');
+  // All form sections render on one scrollable page as independent
+  // collapsibles rather than a click-through step wizard — Site and Plant
+  // start open (the two things almost every entry needs), the rest start
+  // collapsed so the page isn't overwhelming, but any section can be
+  // opened/closed freely and in any order.
+  const [openSections, setOpenSections] = useState<Record<SectionId, boolean>>({
+    site: true,
+    plant: true,
+    geofence: false,
+    personnel: false,
+    review: false,
+  });
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const toggleSection = (id: SectionId) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  const openOnly = (ids: SectionId[]) =>
+    setOpenSections((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => { next[id] = true; });
+      return next;
+    });
 
   const t = {
     title: language === 'bn' ? 'নতুন বৃক্ষরোপণ এন্ট্রি' : 'New Plantation Submission',
@@ -59,21 +73,28 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
     saving: language === 'bn' ? 'সংরক্ষণ হচ্ছে...' : 'Saving...',
     saved: language === 'bn' ? 'খসড়া সংরক্ষিত' : 'Draft saved',
     loading: language === 'bn' ? 'লোড হচ্ছে...' : 'Loading...',
-    stepLabel: {
-      site: language === 'bn' ? 'ধাপ ১ / ৪ — স্থানের তথ্য' : 'Step 1 / 4 — Site Information',
-      plant: language === 'bn' ? 'ধাপ ২ / ৪ — চারার তথ্য' : 'Step 2 / 4 — Plant Information',
-      geofence: language === 'bn' ? 'ধাপ ২ / ৪ — জিও-ফেন্স' : 'Step 2 / 4 — Geofence',
-      personnel: language === 'bn' ? 'ধাপ ৩ / ৪ — ব্যক্তিগত তথ্য' : 'Step 3 / 4 — Personnel',
-      review: language === 'bn' ? 'ধাপ ৪ / ৪ — পর্যালোচনা' : 'Step 4 / 4 — Review',
+    sectionTitle: {
+      site: language === 'bn' ? 'স্থানের তথ্য' : 'Site Information',
+      plant: language === 'bn' ? 'চারার তথ্য' : 'Plant Information',
+      geofence: language === 'bn' ? 'জিও-ফেন্স' : 'Geofence',
+      personnel: language === 'bn' ? 'ব্যক্তিগত তথ্য' : 'Personnel',
+      review: language === 'bn' ? 'পর্যালোচনা ও জমা' : 'Review & Submit',
+    },
+    sectionSubtitle: {
+      site: language === 'bn' ? 'GPS, ম্যাপ, ঠিকানা' : 'GPS, map, address',
+      plant: language === 'bn' ? 'প্রজাতি, সংখ্যা, ছবি' : 'Species, quantity, photos',
+      geofence: language === 'bn' ? 'ব্যাসার্ধ বা সীমানা আঁকুন' : 'Radius or boundary polygon',
+      personnel: language === 'bn' ? 'রোপণকারী ও পরিচর্যাকারী' : 'Planter & caretaker',
+      review: language === 'bn' ? 'জমা দেওয়ার আগে যাচাই করুন' : 'Verify before submitting',
     },
     site: language === 'bn' ? 'সাইট' : 'Site',
-    back: language === 'bn' ? 'পূর্ববর্তী' : 'Back',
-    next: language === 'bn' ? 'পরবর্তী' : 'Next',
     submit: language === 'bn' ? 'জমা দিন' : 'Submit',
     submitting: language === 'bn' ? 'জমা হচ্ছে...' : 'Submitting...',
-    needAtLeastOnePlant: language === 'bn' ? 'এগোতে হলে অন্তত একটি চারা যোগ করুন' : 'Add at least one plant to continue',
-    needAllPlantNames: language === 'bn' ? 'প্রতিটি চারার নাম দিন — খালি রাখা যাবে না' : 'Every plant needs a name before continuing',
-    needPolygon: language === 'bn' ? 'এগোতে হলে সীমানা আঁকুন' : 'Draw the boundary to continue',
+    needLocation: language === 'bn' ? 'স্থানের তথ্যে GPS অবস্থান নির্ধারণ করুন' : 'Set a GPS location in Site Information',
+    needAtLeastOnePlant: language === 'bn' ? 'অন্তত একটি চারা যোগ করুন' : 'Add at least one plant',
+    needAllPlantNames: language === 'bn' ? 'প্রতিটি চারার নাম দিন — খালি রাখা যাবে না' : 'Every plant needs a name',
+    needPolygon: language === 'bn' ? 'জিও-ফেন্সে সীমানা আঁকুন' : 'Draw the boundary in Geofence',
+    readyToSubmit: language === 'bn' ? 'সব তথ্য সম্পূর্ণ — জমা দিতে প্রস্তুত' : 'All set — ready to submit',
     submittedTitle: language === 'bn' ? 'এন্ট্রি জমা হয়েছে' : 'Entry Submitted',
     submittedDesc: language === 'bn'
       ? 'এন্ট্রিটি সংরক্ষিত হয়েছে এবং ম্যাপ/ড্যাশবোর্ড/রেজিস্ট্রিতে দেখা যাবে। সার্ভার সিঙ্ক পরবর্তীতে স্বয়ংক্রিয়ভাবে হবে।'
@@ -132,28 +153,31 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
       personnel: [...prev.personnel, newPersonnel],
     }));
     setActiveSiteIndex(draft.sites.length);
-    setWizardStep('site');
+    openOnly(['site', 'plant']);
   };
 
-  const canAdvanceToPlant = site.location.latitude !== 0 || site.location.longitude !== 0;
+  const hasLocation = site.location.latitude !== 0 || site.location.longitude !== 0;
   // Was `site.plants.length > 0` only -- let an empty PlantCard (name never
   // typed) through as long as at least one card existed, so the very first
   // plant's name silently landed blank in the final submission (reported:
   // "1st plant name entry missing, directly going to [step] 2"). Every
   // plant on the site now has to actually have a species name before
-  // Next unlocks, not just exist.
+  // submission is allowed, not just exist.
   const hasAllPlantNames = site.plants.length > 0 && site.plants.every((p) => p.speciesName.trim() !== '');
-  const canAdvanceFromPlant = hasAllPlantNames;
 
-  const currentMode = deriveGeofenceMode(
-    site.plants.reduce((s, p) => s + (p.quantity || 0), 0),
-    site.geofence.areaSqMeters
-  );
-  const needsGeofenceStep = currentMode !== 'single_tree';
-  const canAdvanceFromGeofence = currentMode !== 'orchard' || (!!site.geofence.polygon && site.geofence.polygon.length >= 3);
+  const currentMode = resolveGeofenceMode(site);
+  const needsGeofenceSection = currentMode !== 'single_tree';
+  const geofenceSatisfied = currentMode !== 'orchard' || (!!site.geofence.polygon && site.geofence.polygon.length >= 3);
 
-  const goPlantNext = () => setWizardStep(needsGeofenceStep ? 'geofence' : 'personnel');
-  const goPersonnelBack = () => setWizardStep(needsGeofenceStep ? 'geofence' : 'plant');
+  // Everything the active site needs before the whole draft can be
+  // submitted -- surfaced both as a disabled Submit button and as a short
+  // checklist, since sections can now be opened/filled in any order.
+  const outstanding: string[] = [];
+  if (!hasLocation) outstanding.push(t.needLocation);
+  if (site.plants.length === 0) outstanding.push(t.needAtLeastOnePlant);
+  else if (!hasAllPlantNames) outstanding.push(t.needAllPlantNames);
+  if (needsGeofenceSection && !geofenceSatisfied) outstanding.push(t.needPolygon);
+  const canSubmit = outstanding.length === 0;
 
   const submissionInfo: SubmissionInfo = draft.submissionInfo ?? {
     submittedById: session?.uid || 'guest',
@@ -212,14 +236,14 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
         </div>
 
         {/* Site switcher */}
-        {draft.sites.length > 1 && wizardStep !== 'review' && (
+        {draft.sites.length > 1 && (
           <div className="flex gap-1.5 mb-3 overflow-x-auto pb-1">
             {draft.sites.map((s, i) => (
               <button
                 key={s.site_id}
                 onClick={() => {
                   setActiveSiteIndex(i);
-                  setWizardStep('site');
+                  openOnly(['site', 'plant']);
                 }}
                 className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer ${
                   i === activeSiteIndex ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-500'
@@ -231,31 +255,30 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
           </div>
         )}
 
-        {/* Progress indicator — 4 dots */}
-        <div className="flex items-center gap-1 mb-4">
-          {[0, 1, 2, 3].map((n) => (
-            <div key={n} className={`flex-1 h-1.5 rounded-full ${n <= PROGRESS_DOT[wizardStep] ? 'bg-emerald-600' : 'bg-gray-100'}`} />
-          ))}
-        </div>
-        <p className="text-[11px] font-semibold text-emerald-700 mb-3">{t.stepLabel[wizardStep]}</p>
-
-        {wizardStep === 'site' && (
-          <>
+        {/* All sections on one scrollable page, each independently
+            collapsible — Site, Geofence, Plant, Personnel, Review. */}
+        <div className="space-y-2.5">
+          <CollapsibleSection
+            title={t.sectionTitle.site}
+            subtitle={t.sectionSubtitle.site}
+            icon={<MapPin size={16} />}
+            open={openSections.site}
+            onToggle={() => toggleSection('site')}
+            complete={hasLocation}
+            needsAttention={!hasLocation}
+          >
             <SiteStep site={site} onChange={updateSiteAt(activeSiteIndex)} language={language} />
-            <div className="flex justify-end mt-4">
-              <button
-                onClick={() => canAdvanceToPlant && setWizardStep('plant')}
-                disabled={!canAdvanceToPlant}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {t.next} <ChevronRight size={14} />
-              </button>
-            </div>
-          </>
-        )}
+          </CollapsibleSection>
 
-        {wizardStep === 'plant' && (
-          <>
+          <CollapsibleSection
+            title={t.sectionTitle.plant}
+            subtitle={t.sectionSubtitle.plant}
+            icon={<Sprout size={16} />}
+            open={openSections.plant}
+            onToggle={() => toggleSection('plant')}
+            complete={hasAllPlantNames}
+            needsAttention={site.plants.length === 0 || !hasAllPlantNames}
+          >
             <PlantStep
               site={site}
               siteLabel={`${t.site} ${activeSiteIndex + 1}`}
@@ -263,101 +286,72 @@ export default function PlantationSubmission({ language = 'bn', onSubmitted }: P
               onRequestNewSite={handleRequestNewSite}
               language={language}
             />
-            <div className="flex items-center justify-between mt-4">
-              <button
-                onClick={() => setWizardStep('site')}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
-              >
-                <ChevronLeft size={14} /> {t.back}
-              </button>
-              <div className="text-right">
-                {!canAdvanceFromPlant && (
-                  <p className="text-[10px] text-amber-600 mb-1">
-                    {site.plants.length === 0 ? t.needAtLeastOnePlant : t.needAllPlantNames}
-                  </p>
-                )}
-                <button
-                  onClick={() => canAdvanceFromPlant && goPlantNext()}
-                  disabled={!canAdvanceFromPlant}
-                  className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {t.next} <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+          </CollapsibleSection>
 
-        {wizardStep === 'geofence' && (
-          <>
-            <GeoFenceStep site={site} onChange={updateSiteAt(activeSiteIndex)} language={language} />
-            <div className="flex items-center justify-between mt-4">
-              <button
-                onClick={() => setWizardStep('plant')}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
-              >
-                <ChevronLeft size={14} /> {t.back}
-              </button>
-              <div className="text-right">
-                {!canAdvanceFromGeofence && <p className="text-[10px] text-amber-600 mb-1">{t.needPolygon}</p>}
-                <button
-                  onClick={() => canAdvanceFromGeofence && setWizardStep('personnel')}
-                  disabled={!canAdvanceFromGeofence}
-                  className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {t.next} <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+          {needsGeofenceSection && (
+            <CollapsibleSection
+              title={t.sectionTitle.geofence}
+              subtitle={t.sectionSubtitle.geofence}
+              icon={<Fence size={16} />}
+              open={openSections.geofence}
+              onToggle={() => toggleSection('geofence')}
+              complete={geofenceSatisfied}
+              needsAttention={!geofenceSatisfied}
+            >
+              <GeoFenceStep site={site} onChange={updateSiteAt(activeSiteIndex)} language={language} />
+            </CollapsibleSection>
+          )}
 
-        {wizardStep === 'personnel' && (
-          <>
+          <CollapsibleSection
+            title={t.sectionTitle.personnel}
+            subtitle={t.sectionSubtitle.personnel}
+            icon={<UserCircle2 size={16} />}
+            open={openSections.personnel}
+            onToggle={() => toggleSection('personnel')}
+            complete={!!currentPersonnel.planterName || !!currentPersonnel.caretakerName}
+          >
             <PersonnelStep
               personnel={currentPersonnel}
               onChange={updatePersonnelForSite(site.site_id)}
               language={language}
             />
-            <div className="flex items-center justify-between mt-4">
-              <button
-                onClick={goPersonnelBack}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
-              >
-                <ChevronLeft size={14} /> {t.back}
-              </button>
-              <button
-                onClick={() => setWizardStep('review')}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition cursor-pointer"
-              >
-                {t.next} <ChevronRight size={14} />
-              </button>
-            </div>
-          </>
-        )}
+          </CollapsibleSection>
 
-        {wizardStep === 'review' && (
-          <>
+          <CollapsibleSection
+            title={t.sectionTitle.review}
+            subtitle={t.sectionSubtitle.review}
+            icon={<ClipboardCheck size={16} />}
+            open={openSections.review}
+            onToggle={() => toggleSection('review')}
+          >
             <ReviewStep sites={draft.sites} personnel={draft.personnel} submissionInfo={submissionInfo} language={language} />
-            <div className="flex items-center justify-between mt-4">
-              <button
-                onClick={() => setWizardStep('personnel')}
-                className="flex items-center gap-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 cursor-pointer"
-              >
-                <ChevronLeft size={14} /> {t.back}
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="flex items-center gap-1 px-5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-60 cursor-pointer"
-              >
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {submitting ? t.submitting : t.submit}
-              </button>
-            </div>
-          </>
-        )}
+          </CollapsibleSection>
+        </div>
+
+        {/* Single submit bar — sections no longer gate each other; this is
+            the only place that must be satisfied before saving the draft. */}
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          {!canSubmit && (
+            <ul className="mb-2.5 space-y-1">
+              {outstanding.map((msg) => (
+                <li key={msg} className="text-[11px] text-amber-600 flex items-center gap-1">
+                  • {msg}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canSubmit && <p className="text-[11px] text-emerald-600 font-semibold mb-2.5">{t.readyToSubmit}</p>}
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !canSubmit}
+            className="w-full flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl bg-emerald-700 text-white text-sm font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {submitting ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+            {submitting ? t.submitting : t.submit}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Trash2, Save, Pencil, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PLANT_TYPES, getSpeciesByPlantType } from '../../../data/taxonomy';
 import PhotoUploader from './PhotoUploader';
 import type { PlantEntry } from '../types/submission';
@@ -22,6 +22,13 @@ export default function PlantCard({ plant, onChange, onRemove, siteLatitude, sit
     quantity: language === 'bn' ? 'সংখ্যা' : 'Quantity',
     selectCategory: language === 'bn' ? '— নির্বাচন করুন —' : '— Select —',
     otherSpecies: language === 'bn' ? 'অন্যান্য (লিখুন)' : 'Other (type manually)',
+    save: language === 'bn' ? 'চারাটি সংরক্ষণ করুন' : 'Save this plant',
+    saved: language === 'bn' ? 'সংরক্ষিত' : 'Saved',
+    edit: language === 'bn' ? 'সম্পাদনা' : 'Edit',
+    incomplete: language === 'bn'
+      ? 'সংরক্ষণের আগে ক্যাটাগরি, প্রজাতির নাম ও সংখ্যা পূরণ করুন'
+      : 'Fill in category, plant name, and quantity before saving',
+    qty: language === 'bn' ? 'সংখ্যা' : 'qty',
   };
 
   const set = <K extends keyof PlantEntry>(key: K, value: PlantEntry[K]) => {
@@ -30,6 +37,43 @@ export default function PlantCard({ plant, onChange, onRemove, siteLatitude, sit
 
   const speciesOptions = plant.category ? getSpeciesByPlantType(plant.category) : [];
   const isCustomSpecies = plant.category !== '' && !speciesOptions.some((s) => s.name === plant.speciesName);
+
+  const isFilledOut = plant.category.trim() !== '' && plant.speciesName.trim() !== '' && plant.quantity > 0;
+
+  const handleSave = () => {
+    if (!isFilledOut) return;
+    set('confirmed', true);
+  };
+
+  // Once saved, collapse to a compact summary row so a long plant list
+  // doesn't stay a wall of open forms — tap Edit to reopen.
+  if (plant.confirmed) {
+    return (
+      <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 flex items-center gap-2.5">
+        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold text-emerald-900 truncate">{plant.speciesName}</p>
+          <p className="text-[10px] text-emerald-600">{plant.variety ? `${plant.variety} · ` : ''}{t.qty}: {plant.quantity}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => set('confirmed', false)}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-white text-emerald-700 text-[11px] font-bold hover:bg-emerald-50 cursor-pointer shrink-0"
+        >
+          <Pencil size={12} /> {t.edit}
+        </button>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-gray-300 hover:text-red-500 cursor-pointer shrink-0"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-3 relative">
@@ -136,6 +180,20 @@ export default function PlantCard({ plant, onChange, onRemove, siteLatitude, sit
         siteLongitude={siteLongitude}
         language={language}
       />
+
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={!isFilledOut}
+        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+      >
+        <Save size={14} /> {t.save}
+      </button>
+      {!isFilledOut && (
+        <p className="text-[10px] text-amber-600 flex items-center gap-1 -mt-1.5">
+          <AlertCircle size={11} /> {t.incomplete}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { GeofenceMode } from '../types/submission';
+import type { GeofenceMode, PlantationSite } from '../types/submission';
 
 /** Orchard mode kicks in past this quantity even if area isn't known yet. */
 export const ORCHARD_QUANTITY_THRESHOLD = 20;
@@ -25,4 +25,14 @@ export function deriveGeofenceMode(totalQuantity: number, estimatedAreaSqMeters?
 
 export function useGeofenceMode(totalQuantity: number, estimatedAreaSqMeters?: number): GeofenceMode {
   return deriveGeofenceMode(totalQuantity, estimatedAreaSqMeters);
+}
+
+/** Resolves the effective geofence mode for a site: an explicit
+ *  `geofence.manualMode` (set via the Plant section's একক গাছ / ছোট বাগান /
+ *  বাগান save buttons) always wins; otherwise falls back to the
+ *  quantity/area auto-derivation. */
+export function resolveGeofenceMode(site: PlantationSite): GeofenceMode {
+  if (site.geofence.manualMode) return site.geofence.manualMode;
+  const totalQuantity = site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  return deriveGeofenceMode(totalQuantity, site.geofence.areaSqMeters);
 }

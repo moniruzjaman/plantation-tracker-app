@@ -28,6 +28,13 @@ export type GeofenceMode = 'single_tree' | 'small_plantation' | 'orchard';
 
 export interface GeofenceData {
   mode: GeofenceMode;
+  /** Set when the officer explicitly picks a plant-entry type (একক গাছ /
+   *  ছোট বাগান / বাগান) via the Plant section's save buttons, instead of
+   *  letting the quantity/area thresholds decide automatically. Once set,
+   *  this takes priority over the auto-derived mode — see
+   *  services/... resolveGeofenceMode(). Cleared is represented by
+   *  `undefined`, which falls back to auto-derivation again. */
+  manualMode?: GeofenceMode;
   latitude: number;
   longitude: number;
   /** Small-plantation mode only — optional coverage radius in meters. */
@@ -84,6 +91,13 @@ export interface PlantEntry {
   /** Max 3 photos per plant entry, per spec. */
   photos: PhotoRecord[];
   validationStatus: 'pending' | 'validated' | 'rejected';
+  /** Set by the explicit Save button on PlantCard once the officer has
+   *  finished filling this entry in. Purely a UI/UX confirmation — the
+   *  entry is already persisted in the draft on every keystroke either
+   *  way — but it collapses the card to a compact summary so a long list
+   *  of plants doesn't stay a wall of open forms, and gives the officer a
+   *  clear "done with this one" checkpoint before moving to the next. */
+  confirmed?: boolean;
 }
 
 // ---------- Plantation Site ----------
@@ -186,6 +200,7 @@ export function createEmptyPlant(): PlantEntry {
     quantity: 1,
     photos: [],
     validationStatus: 'pending',
+    confirmed: false,
   };
 }
 

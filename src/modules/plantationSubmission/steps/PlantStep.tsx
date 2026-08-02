@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Sprout, Plus, X } from 'lucide-react';
 import PlantCard from '../components/PlantCard';
-import { createEmptyPlant, type PlantationSite } from '../types/submission';
+import PlantTypeSaveBar from '../components/PlantTypeSaveBar';
+import { createEmptyPlant, type PlantationSite, type GeofenceMode } from '../types/submission';
+import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 
 interface PlantStepProps {
   site: PlantationSite;
@@ -32,7 +34,7 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
     addFirstPlant: language === 'bn' ? '+ প্রথম চারা যোগ করুন' : '+ Add First Plant',
     promptTitle: language === 'bn' ? 'এই চারাটি কি একই স্থানে?' : 'Is this plant located at the same plantation site?',
     promptDesc: language === 'bn'
-      ? 'একই miejsce হলে বর্তমান GPS/ঠিকানা পুনরায় ব্যবহার হবে। নতুন místo হলে নতুন সাইট তৈরি হবে এবং GPS আবার নিতে হবে।'
+      ? 'একই স্থান হলে বর্তমান GPS/ঠিকানা পুনরায় ব্যবহার হবে। ভিন্ন স্থান হলে নতুন সাইট তৈরি হবে এবং GPS আবার নিতে হবে।'
       : 'Same site reuses this GPS/address. A different site creates a new site and needs fresh GPS capture.',
     yes: language === 'bn' ? 'হ্যাঁ, একই স্থান' : 'Yes, same site',
     no: language === 'bn' ? 'না, ভিন্ন স্থান' : 'No, different site',
@@ -63,6 +65,13 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
       return;
     }
     setPendingSameSitePrompt(true);
+  };
+
+  const totalQuantity = site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  const currentMode = resolveGeofenceMode(site);
+
+  const handleSavePlantType = (mode: GeofenceMode) => {
+    onChange((prev) => ({ ...prev, geofence: { ...prev.geofence, manualMode: mode, mode } }));
   };
 
   return (
@@ -101,6 +110,15 @@ export default function PlantStep({ site, siteLabel, onChange, onRequestNewSite,
       >
         <Plus size={14} /> {t.addPlant}
       </button>
+
+      {site.plants.length > 0 && (
+        <PlantTypeSaveBar
+          totalQuantity={totalQuantity}
+          currentMode={currentMode}
+          onSave={handleSavePlantType}
+          language={language}
+        />
+      )}
 
       {/* "Same plantation site?" prompt */}
       {pendingSamSitePrompt && (

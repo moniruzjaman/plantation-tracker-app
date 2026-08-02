@@ -1,6 +1,6 @@
 import { Fence } from 'lucide-react';
 import PolygonDrawer from '../components/PolygonDrawer';
-import { deriveGeofenceMode } from '../hooks/useGeofenceMode';
+import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 import type { PlantationSite } from '../types/submission';
 import type { LatLng } from '../services/geometry';
 
@@ -17,7 +17,7 @@ interface GeoFenceStepProps {
  */
 export default function GeoFenceStep({ site, onChange, language = 'bn' }: GeoFenceStepProps) {
   const totalQty = site.plants.reduce((sum, p) => sum + (p.quantity || 0), 0);
-  const mode = deriveGeofenceMode(totalQty, site.geofence.areaSqMeters);
+  const mode = resolveGeofenceMode(site);
 
   const t = {
     title: language === 'bn' ? 'জিও-ফেন্স' : 'Geofence',
