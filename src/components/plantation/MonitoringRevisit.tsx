@@ -17,15 +17,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ClipboardCheck, Camera, Ruler, Activity, TreePine,
-  MapPin, CheckCircle, AlertTriangle, XCircle, ArrowLeft, Save
+  MapPin, CheckCircle, AlertTriangle, XCircle, ArrowLeft, Save, Leaf, TrendingUp
 } from 'lucide-react';
-import { db, getSubmissionReward } from '../../lib/db';
+import { db, getSubmissionReward, saveMonitoringRevisit, getRevisitsForSubmission, type MonitoringRevisitRecord } from '../../lib/db';
 import type {
   PlantationSubmission, CheckpointStage, VM0047HealthStatus, PhotoType, PhotoRecord
 } from '../../types/plantation';
 import { compressPhoto, CHECKPOINT_GEOFENCE_METERS, distanceMeters, VM0047_REQUIRED_PHOTO_TYPES, PHOTO_TYPE_LABELS } from '../../utils/photoEvidence';
 import { calculateGrowthPrognosis } from '../../utils/growthModel';
 import { calculateCarbonStock } from '../../utils/carbonStock';
+import { getNdviForPoint } from '../../modules/plantationSubmission/services/ndvi';
+import { CHECKPOINT_LABEL } from '../../services/revisitSchedule';
 
 interface MonitoringRevisitProps {
   submissionId: string;
@@ -84,11 +86,36 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
   const [saved, setSaved] = useState(false);
   const [gpsDistance, setGpsDistance] = useState<number | null>(null);
   const [showCarbonReport, setShowCarbonReport] = useState(false);
+  const [ndvi, setNdvi] = useState<number | null>(null);
+  const [ndviLoading, setNdviLoading] = useState(false);
+  const [history, setHistory] = useState<MonitoringRevisitRecord[]>([]);
+  const [savedOffline, setSavedOffline] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Load original submission
   useEffect(() => {
     db.submissions.get(submissionId).then(setSubmission);
   }, [submissionId]);
+
+  // Load this site's local revisit history — powers the growth/NDVI
+  // trend shown below the form, and works fully offline.
+  useEffect(() => {
+    getRevisitsForSubmission(submissionId).then(setHistory);
+  }, [submissionId]);
+
+  // Sample NDVI at the revisit's GPS point, same source used at planting
+  // time (modules/plantationSubmission/services/ndvi.ts) — this is what
+  // lets the trend actually compare apples to apples across visits.
+  useEffect(() => {
+    if (!gpsLat || !gpsLon) return;
+    let cancelled = false;
+    setNdviLoading(true);
+    getNdviForPoint(gpsLat, gpsLon)
+      .then((r) => { if (!cancelled) setNdvi(r.ndvi); })
+      .catch(() => { if (!cancelled) setNdvi(null); })
+      .finally(() => { if (!cancelled) setNdviLoading(false); });
+    return () => { cancelled = true; };
+  }, [gpsLat, gpsLon]);
 
   // Calculate GPS distance from original planting point
   useEffect(() => {
@@ -134,9 +161,13 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
   const handleSave = useCallback(async () => {
     if (!submission) return;
     setSaving(true);
+    setSaveError(null);
 
+    // A revisit filed with no signal in a char area must not be lost --
+    // the local IndexedDB write always happens; the server POST is
+    // best-effort and just flips `synced` on the local record.
+    let syncedToServer = false;
     try {
-      // Post monitoring revisit to server
       const res = await fetch('/api/monitoring/revisit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -158,9 +189,12 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
           remarks: form.remarks || null,
         }),
       });
+      syncedToServer = res.ok;
+    } catch {
+      syncedToServer = false; // offline/network error -- fall through to local save
+    }
 
-      if (!res.ok) throw new Error('Server sync failed');
-
+    try {
       // Update local submission with VM0047 health status
       await db.submissions.update(submission.id, {
         vm0047HealthStatus: form.vm0047HealthStatus,
@@ -172,13 +206,36 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
         await db.submissions.put(updated);
       }
 
+      // Persist this revisit locally too -- powers the offline revisit-due
+      // list and the growth/NDVI trend without depending on a server
+      // round-trip every time the dashboard loads. This always runs, even
+      // if the server POST above failed.
+      await saveMonitoringRevisit({
+        id: crypto.randomUUID(),
+        submissionId: submission.id,
+        stage: form.stage,
+        recordedAt: new Date().toISOString(),
+        avgHeightM: parseFloat(form.avgHeightM) || undefined,
+        avgDbhCm: parseFloat(form.avgDbhCm) || undefined,
+        avgCanopyRadiusM: parseFloat(form.avgCanopyRadiusM) || undefined,
+        vm0047HealthStatus: form.vm0047HealthStatus,
+        survivalCount: parseInt(form.survivalCount) || undefined,
+        deadCount: parseInt(form.deadCount) || undefined,
+        ndvi: ndvi ?? undefined,
+        latitude: gpsLat || 0,
+        longitude: gpsLon || 0,
+        synced: syncedToServer,
+      });
+
+      setSavedOffline(!syncedToServer);
       setSaved(true);
     } catch (err) {
       console.error('[Save Monitoring]', err);
+      setSaveError('স্থানীয়ভাবে সংরক্ষণ ব্যর্থ হয়েছে -- আবার চেষ্টা করুন');
     } finally {
       setSaving(false);
     }
-  }, [submission, form, photos, gpsLat, gpsLon, gpsAccuracy]);
+  }, [submission, form, photos, gpsLat, gpsLon, gpsAccuracy, ndvi]);
 
   if (!submission) {
     return <div className="p-4 text-center text-gray-500">লোড হচ্ছে...</div>;
@@ -224,6 +281,11 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
           <h2 className="text-xl font-bold text-gray-800 mb-2">সফলভাবে সংরক্ষিত হয়েছে!</h2>
           <p className="text-gray-600 mb-1">চেকপয়েন্ট: {STAGE_OPTIONS.find(s => s.value === form.stage)?.labelBn}</p>
           <p className="text-gray-600 mb-1">স্বাস্থ্য: {HEALTH_OPTIONS.find(h => h.value === form.vm0047HealthStatus)?.labelBn}</p>
+          {savedOffline && (
+            <p className="text-amber-600 text-xs font-semibold mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 inline-block">
+              অফলাইনে সংরক্ষিত — নেটওয়ার্ক ফিরলে স্বয়ংক্রিয়ভাবে সার্ভারে পাঠানো হবে
+            </p>
+          )}
           {carbonReport && (
             <p className="text-emerald-700 font-medium mt-3">
               CO₂ সমতুল্য: {carbonReport.co2EquivalentTons.toFixed(4)} টন
@@ -357,6 +419,65 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
             )}
           </div>
 
+          {/* NDVI reading at this revisit */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <Leaf className="w-4 h-4 inline mr-1 text-emerald-600" />
+              এই পরিদর্শনে NDVI (স্যাটেলাইট)
+            </label>
+            {ndviLoading ? (
+              <p className="text-xs text-gray-400">NDVI পড়া হচ্ছে...</p>
+            ) : ndvi !== null ? (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${ndvi >= 0.5 ? 'bg-emerald-500' : ndvi >= 0.25 ? 'bg-amber-500' : 'bg-red-400'}`}
+                    style={{ width: `${Math.max(0, Math.min(1, ndvi)) * 100}%` }}
+                  />
+                </div>
+                <span className="text-sm font-bold text-gray-700 font-mono">{ndvi.toFixed(3)}</span>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">GPS পাওয়া গেলে NDVI স্বয়ংক্রিয়ভাবে যোগ হবে</p>
+            )}
+          </div>
+
+          {/* Growth / NDVI trend across past checkpoints */}
+          {history.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                <TrendingUp className="w-4 h-4 inline mr-1 text-emerald-600" />
+                বৃদ্ধি ও NDVI ট্রেন্ড
+              </label>
+              <div className="space-y-2">
+                {history.map((h) => {
+                  const health = HEALTH_OPTIONS.find((o) => o.value === h.vm0047HealthStatus);
+                  const HealthIcon = health?.icon || CheckCircle;
+                  return (
+                    <div key={h.id} className="flex items-center gap-2 text-xs border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                      <HealthIcon className={`w-3.5 h-3.5 shrink-0 ${health?.color || 'text-gray-400'}`} />
+                      <span className="font-semibold text-gray-700 w-14 shrink-0">
+                        {CHECKPOINT_LABEL[h.stage]?.bn || h.stage}
+                      </span>
+                      <span className="text-gray-400 w-20 shrink-0">{h.recordedAt.slice(0, 10)}</span>
+                      {h.avgHeightM !== undefined && (
+                        <span className="text-gray-600">{h.avgHeightM.toFixed(1)}মি</span>
+                      )}
+                      {h.ndvi !== undefined && (
+                        <span className="ml-auto font-mono text-emerald-700 font-semibold">
+                          NDVI {h.ndvi.toFixed(2)}
+                        </span>
+                      )}
+                      {!h.synced && (
+                        <span className="text-[9px] text-amber-500 font-semibold">অসিঙ্ক</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Survival Counts */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <label className="block text-sm font-semibold text-gray-700 mb-3">
@@ -460,6 +581,11 @@ export default function MonitoringRevisit({ submissionId, onBack, gpsLat, gpsLon
           </div>
 
           {/* Save Button */}
+          {saveError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-center">
+              {saveError}
+            </p>
+          )}
           <button onClick={handleSave} disabled={saving}
             className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-bold text-base
               flex items-center justify-center gap-2 shadow-lg shadow-emerald-200

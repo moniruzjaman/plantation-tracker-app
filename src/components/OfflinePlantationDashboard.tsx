@@ -35,6 +35,8 @@ import { useAuth } from '../hooks/useAuth';
 import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
 import RegistryTab from './RegistryTab';
+import RevisitDueList from './plantation/RevisitDueList';
+import MonitoringRevisit from './plantation/MonitoringRevisit';
 import { SEED_PLANTATIONS, SEED_STATS } from '../data/seedPlantations';
 import {
   fetchSeedSyncStatus,
@@ -58,8 +60,22 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [revisitingSubmissionId, setRevisitingSubmissionId] = useState<string | null>(null);
+  const [revisitGps, setRevisitGps] = useState<{ lat: number; lon: number; accuracy: number } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'metrics' | 'health' | 'wealth' | 'registry'>('metrics');
+  // Grab a fresh GPS fix as soon as the officer opens a revisit — the
+  // form itself validates this against the original planting point
+  // (~15m geofence) so a revisit can't be filed from somewhere else.
+  useEffect(() => {
+    if (!revisitingSubmissionId || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setRevisitGps({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => setRevisitGps(null),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }, [revisitingSubmissionId]);
+
+  const [activeTab, setActiveTab] = useState<'metrics' | 'health' | 'wealth' | 'registry' | 'revisits'>('metrics');
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string>('custom');
   const [selectedSpecies, setSelectedSpecies] = useState<string>('আম');
   const [customPlantingDate, setCustomPlantingDate] = useState<string>('2026-03-15');
@@ -355,6 +371,18 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
 
   const maxCategoryCount = Math.max(fruitCount, forestCount, medicinalCount, 1);
 
+  if (revisitingSubmissionId) {
+    return (
+      <MonitoringRevisit
+        submissionId={revisitingSubmissionId}
+        onBack={() => { setRevisitingSubmissionId(null); setRevisitGps(null); }}
+        gpsLat={revisitGps?.lat}
+        gpsLon={revisitGps?.lon}
+        gpsAccuracy={revisitGps?.accuracy}
+      />
+    );
+  }
+
   return (
     <div className="w-full h-full overflow-y-auto bg-white font-sans" id="offlineDashboardContainer">
       <div className="w-full max-w-2xl mx-auto p-4 pb-24">
@@ -426,7 +454,7 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
 
           {/* Tab Switcher — 4 tabs now */}
           <div className="flex border-b border-gray-100 p-0.5 bg-gray-50 rounded-xl">
-            {(['metrics', 'health', 'wealth', 'registry'] as const).map(tab => (
+            {(['metrics', 'health', 'revisits', 'wealth', 'registry'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -438,6 +466,7 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
               >
                 {tab === 'metrics' && (language === 'bn' ? '📊 পরিসংখ্যান' : '📊 Metrics')}
                 {tab === 'health' && (language === 'bn' ? '🌱 স্বাস্থ্য' : '🌱 Health')}
+                {tab === 'revisits' && (language === 'bn' ? '📅 পরিদর্শন' : '📅 Revisits')}
                 {tab === 'wealth' && (language === 'bn' ? '🏆 টোকেন' : '🏆 Wealth')}
                 {tab === 'registry' && (language === 'bn' ? '📋 রেজিস্ট্রি' : '📋 Registry')}
               </button>
@@ -1186,6 +1215,13 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                   ? '* বাংলাদেশের জলবায়ু ও বন বিভাগ নির্দেশিকা বিশ্লেষণ করে এই প্রাক্কলন।'
                   : '* Based on Bangladesh climate and Forest Department silviculture guidelines.'}
               </p>
+            </div>
+          )}
+
+          {/* ============ REVISITS TAB ============ */}
+          {activeTab === 'revisits' && !loading && (
+            <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+              <RevisitDueList onOpenRevisit={(id) => setRevisitingSubmissionId(id)} language={language} />
             </div>
           )}
 

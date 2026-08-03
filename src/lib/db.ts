@@ -16,8 +16,31 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
-import type { PlantationSubmission } from '../types/plantation';
+import type { PlantationSubmission, CheckpointStage, VM0047HealthStatus } from '../types/plantation';
 import type { UserProfile } from '../types';
+
+// ---------- Local monitoring-revisit history ----------
+// Mirrors what MonitoringRevisit.tsx posts to /api/monitoring/revisit,
+// kept locally too so the revisit-due list and NDVI/growth trend can be
+// computed offline without round-tripping to the server for every
+// submission on every dashboard load.
+
+export interface MonitoringRevisitRecord {
+  id: string;
+  submissionId: string; // -> PlantationSubmission.id
+  stage: CheckpointStage;
+  recordedAt: string; // ISO timestamp
+  avgHeightM?: number;
+  avgDbhCm?: number;
+  avgCanopyRadiusM?: number;
+  vm0047HealthStatus: VM0047HealthStatus;
+  survivalCount?: number;
+  deadCount?: number;
+  ndvi?: number;
+  latitude: number;
+  longitude: number;
+  synced: boolean;
+}
 
 // ---------- Submission Token Rewards ----------
 // "The more data you provide, the more tokens you earn"
@@ -135,6 +158,7 @@ class PlantationDB extends Dexie {
   submissions!: EntityTable<PlantationSubmission, 'id'>;
   userProfile!: EntityTable<UserProfile, 'id'>;
   newSubmissionDrafts!: EntityTable<import('../modules/plantationSubmission/types/submission').SubmissionDraft, 'draft_id'>;
+  monitoringRevisits!: EntityTable<MonitoringRevisitRecord, 'id'>;
 
   constructor() {
     super('PlantationTrackerDB');
@@ -158,6 +182,16 @@ class PlantationDB extends Dexie {
       submissions: 'id, timestamp, synced, district, upazila',
       userProfile: 'id, mobile, role',
       newSubmissionDrafts: 'draft_id, status, updatedAt',
+    });
+
+    // v4: add monitoringRevisits table — local history of VM0047 revisit
+    // checkpoints (see MonitoringRevisit.tsx), so the "due for revisit"
+    // list and NDVI/growth trend can be computed offline. Additive only.
+    this.version(4).stores({
+      submissions: 'id, timestamp, synced, district, upazila',
+      userProfile: 'id, mobile, role',
+      newSubmissionDrafts: 'draft_id, status, updatedAt',
+      monitoringRevisits: 'id, submissionId, stage, recordedAt, synced',
     });
   }
 }
@@ -294,3 +328,24 @@ export function getProfileTokenReward(p: Partial<UserProfile>): number {
 
 export { db };
 export default db;
+
+// ---------- Monitoring Revisit API ----------
+
+/** Save a revisit record locally (upsert by id) — called alongside the
+ *  server POST in MonitoringRevisit.tsx so revisit history/NDVI trend
+ *  and the due-list work fully offline. */
+export async function saveMonitoringRevisit(record: MonitoringRevisitRecord): Promise<void> {
+  await db.monitoringRevisits.put(record);
+}
+
+/** All revisits for one submission, oldest first — for trend display. */
+export async function getRevisitsForSubmission(submissionId: string): Promise<MonitoringRevisitRecord[]> {
+  const all = await db.monitoringRevisits.where('submissionId').equals(submissionId).toArray();
+  return all.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+}
+
+/** All revisits across every submission — used to compute the due-list
+ *  without an N+1 query per submission. */
+export async function getAllMonitoringRevisits(): Promise<MonitoringRevisitRecord[]> {
+  return db.monitoringRevisits.toArray();
+}
