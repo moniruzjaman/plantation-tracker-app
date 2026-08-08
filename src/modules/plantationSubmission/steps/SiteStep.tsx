@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { MapPin, Leaf, Cloud, Info, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { MapPin, Leaf, Cloud, Info, Loader2, AlertTriangle } from 'lucide-react';
 import GPSCapture from '../components/GPSCapture';
 import MapPicker from '../components/MapPicker';
 import { getNdviForPoint } from '../services/ndvi';
@@ -8,6 +8,8 @@ import { resolveGeofenceMode } from '../hooks/useGeofenceMode';
 import type { PlantationSite } from '../types/submission';
 import { toBnNum } from '../../../utils/mapHelper';
 import { roundCoord, formatCoord } from '../utils/coords';
+import { isWithinBangladesh } from '../../../data/kurigramUpazilaBounds';
+import { findContainingUpazila, isWithinUpazilaPolygon } from '../../../data/kurigramUpazilaPolygons';
 
 interface SiteStepProps {
   site: PlantationSite;
@@ -162,6 +164,34 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
     );
   }, [site.location.latitude, site.location.longitude, setLocation, setGeofencePoint]);
 
+  // Live jurisdiction check — runs on every location change (GPS capture,
+  // map tap/drag, or manual upazila edit), so the officer sees a mismatch
+  // immediately on the form instead of only in the backend review score.
+  const jurisdictionWarning = useMemo(() => {
+    const { latitude: lat, longitude: lng, upazila } = site.location;
+    if (lat === 0 && lng === 0) return null;
+
+    if (!isWithinBangladesh(lat, lng)) {
+      return language === 'bn'
+        ? 'GPS অবস্থান বাংলাদেশের সীমানার বাইরে দেখাচ্ছে। অবস্থান পুনরায় যাচাই করুন।'
+        : 'GPS location appears to be outside Bangladesh. Please re-check the location.';
+    }
+    if (!upazila) return null; // nothing declared yet to compare against
+
+    if (!isWithinUpazilaPolygon(lat, lng, upazila)) {
+      const actual = findContainingUpazila(lat, lng);
+      if (language === 'bn') {
+        return actual
+          ? `GPS অবস্থান "${actual}" উপজেলায় আছে বলে মনে হচ্ছে, কিন্তু ঠিকানায় "${upazila}" দেওয়া আছে। মিলিয়ে দেখুন।`
+          : `GPS location doesn't match "${upazila}". Please verify the address fields.`;
+      }
+      return actual
+        ? `GPS location appears to be in "${actual}" upazila, but the address says "${upazila}". Please double-check.`
+        : `GPS location falls outside "${upazila}"'s boundary. Please verify.`;
+    }
+    return null;
+  }, [site.location.latitude, site.location.longitude, site.location.upazila, language]);
+
   const geofenceMode = resolveGeofenceMode(site);
 
   const modeLabel: Record<string, { bn: string; en: string }> = {
@@ -221,6 +251,12 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
             </div>
           ))}
         </div>
+        {jurisdictionWarning && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+            <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-800 leading-snug">{jurisdictionWarning}</p>
+          </div>
+        )}
       </div>
 
       {/* Geofence mode indicator */}
