@@ -3,6 +3,7 @@ import { Search, MapPin, Phone, Camera, X, ListFilter } from 'lucide-react';
 import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
 import { KURIGRAM_UPAZILAS, colorForUpazila } from '../utils/upazilaColors';
+import { canonicalizeUpazila } from '../utils/canonicalizeUpazila';
 import RegistryDetailModal from './RegistryDetailModal';
 
 interface RegistryTabProps {
@@ -48,7 +49,7 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
   // ---- Facet filtering, all over the same in-memory array ----
   const filtered = useMemo(() => {
     return submissions
-      .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+      .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(s.upazila)))
       .filter((s) => {
         if (gpsFilter === 'all') return true;
         const hasGps = !!s.verificationLatitude;
@@ -232,7 +233,7 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
         )}
         {filtered.map((s) => {
           const total = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
-          const color = colorForUpazila(s.upazila);
+          const color = colorForUpazila(canonicalizeUpazila(s.upazila));
           return (
             <button
               key={s.id}

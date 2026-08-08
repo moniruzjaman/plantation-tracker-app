@@ -15,6 +15,7 @@ import { distanceMeters } from '../../../utils/photoEvidence';
 import { KURIGRAM_UPAZILAS } from '../../../utils/upazilaColors';
 import { isWithinBangladesh, isWithinKurigramDistrict } from '../../../data/kurigramUpazilaBounds';
 import { isWithinUpazilaPolygon, findContainingUpazila } from '../../../data/kurigramUpazilaPolygons';
+import { canonicalizeUpazila } from '../../../utils/canonicalizeUpazila';
 import type { PlantationSite } from '../types/submission';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -67,7 +68,13 @@ export function scoreGpsAccuracy(accuracy: number): CheckResult {
  *  is actually inside that upazila — see scoreGeoBoundary for that. */
 export function scoreBoundaryMatch(site: PlantationSite): CheckResult {
   const maxPoints = 10;
-  const matched = KURIGRAM_UPAZILAS.includes(site.location.upazila as any);
+  // Canonicalize defensively -- this runs against whatever's currently in
+  // site.location.upazila, which for an older in-progress draft saved
+  // before canonicalizeUpazila existed could still hold raw Nominatim
+  // text that would otherwise fail this check even for a genuinely valid
+  // upazila. See canonicalizeUpazila.ts.
+  const canonicalUpazila = canonicalizeUpazila(site.location.upazila);
+  const matched = KURIGRAM_UPAZILAS.includes(canonicalUpazila as any);
   return {
     key: 'boundary_match',
     label: 'প্রশাসনিক সীমানা নাম',
@@ -88,7 +95,8 @@ export function scoreBoundaryMatch(site: PlantationSite): CheckResult {
 export function scoreGeoBoundary(site: PlantationSite): CheckResult {
   const maxPoints = 20;
   const hasPoint = site.location.latitude !== 0 || site.location.longitude !== 0;
-  const { latitude: lat, longitude: lng, upazila } = site.location;
+  const { latitude: lat, longitude: lng, upazila: rawUpazila } = site.location;
+  const upazila = canonicalizeUpazila(rawUpazila);
 
   if (!hasPoint) {
     return {

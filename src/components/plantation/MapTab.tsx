@@ -17,6 +17,7 @@ import { useSheetPlantations } from '../../hooks/useSheetPlantations';
 import { getSubmissions, saveSubmission } from '../../lib/db';
 import type { PlantationSubmission } from '../../types/plantation';
 import { colorForUpazila, UPAZILA_COLORS } from '../../utils/upazilaColors';
+import { canonicalizeUpazila } from '../../utils/canonicalizeUpazila';
 import MapFilterBar from './MapFilterBar';
 import MapEditModal from './MapEditModal';
 import { createEmptySubmission } from '../../types/plantation';
@@ -72,7 +73,8 @@ function colorForSpecies(speciesName: string): string {
 /** Determine marker color: prefer upazila color for real submissions,
  *  fall back to species-based category color for seed/sheet entries */
 function markerColor(upazila: string | undefined, speciesName: string): string {
-  if (upazila && UPAZILA_COLORS[upazila]) return UPAZILA_COLORS[upazila];
+  const canonical = upazila ? canonicalizeUpazila(upazila) : upazila;
+  if (canonical && UPAZILA_COLORS[canonical]) return UPAZILA_COLORS[canonical];
   return colorForSpecies(speciesName);
 }
 
@@ -352,7 +354,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
 
   const filteredSubmissions = submissions
     .filter((s) => s.latitude && s.longitude)
-    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(s.upazila)))
     .filter((s) => {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.trim().toLowerCase();
@@ -492,7 +494,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
                   p.farmerName?.toLowerCase().includes(q)
                 );
               })
-              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
               .map((p, i) => {
               const primarySpecies = p.seedlings[0]?.speciesName || '';
               const speciesLabel =
@@ -604,7 +606,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
                   p.caretaker?.toLowerCase().includes(q)
                 );
               })
-              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(p.upazila))
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
               .map((p) => {
                 const mColor = markerColor(p.upazila, p.speciesName);
                 return (
@@ -695,7 +697,7 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
             contact) — writes back through the same offline sync queue
             used by the entry form. */}
         {filteredSubmissions.map((s) => {
-          const color = colorForUpazila(s.upazila);
+          const color = colorForUpazila(canonicalizeUpazila(s.upazila));
           const totalCount = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
           return (
             <CircleMarker
