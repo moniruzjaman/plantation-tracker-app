@@ -7,9 +7,6 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
-    test: {
-      environment: 'jsdom',
-    },
     plugins: [
       react(),
       tailwindcss(),
@@ -81,7 +78,7 @@ export default defineConfig(({mode}) => {
         manifest: {
           name: 'plantation-tracker',
           short_name: 'বৃক্ষরোপণ ট্র্যাকার',
-          description: '“০৫ বছরে ২৫ কোটি বৃক্ষরোপণ” কর্মসূচির আওতাভুক্ত তথ্য সংগ্রহ ও ট্র্যাকিং অ্যাপ',
+          description: '"০৫ বছরে ২৫ কোটি বৃক্ষরোপণ" কর্মসূচির আওতাভুক্ত তথ্য সংগ্রহ ও ট্রাকিং',
           theme_color: '#15803d',
           background_color: '#15803d',
           display: 'standalone',
@@ -127,8 +124,12 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify — file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    test: {
+      environment: 'jsdom',
+      globals: true,
     },
   };
 });
