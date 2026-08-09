@@ -617,6 +617,37 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                     </div>
                   )}
 
+                  {/* Target progress */}
+                  <div className="flex flex-col gap-1 bg-amber-50/40 border border-amber-100/50 p-2.5 rounded-xl text-[10.5px]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-amber-800 flex items-center gap-1">
+                        <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
+                        {t.targetText}
+                      </span>
+                      <span className="font-bold text-amber-800 text-[10px]">
+                        {language === 'bn' ? '৫ বছরে ২৫ কোটি' : '250M in 5 Yrs'}
+                      </span>
+                    </div>
+                    <p className="text-gray-500 leading-relaxed mt-1">
+                      {language === 'bn'
+                        ? `আপনার অঞ্চল থেকে ২৫ কোটি গাছ রোপণ কর্মসূচিতে অনন্য অবদান রাখছেন।`
+                        : `Your submissions contribute toward the national 250M plantation target.`}
+                    </p>
+                  </div>
+
+                  {/* Sync status tip */}
+                  <div className="p-2.5 rounded-xl border bg-emerald-50/50 border-emerald-100/80 text-emerald-800 text-[10.5px] leading-relaxed flex gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <p>{t.syncTip}</p>
+                  </div>
+                </>
+              )}
+
+              {/* App_Entry / Seed Data lives outside the totalLogs gate above --
+                  it is nationwide live data, independent of whether THIS
+                  device has any local submissions of its own (e.g. a
+                  reviewer/DD account with zero personal submissions should
+                  still see it). */}
                   {/* ─── App_Entry / Seed Data Block ─── */}
                   <div className="flex flex-col gap-2 border-t-2 border-dashed border-sky-200 pt-3">
                     <div className="flex items-center justify-between">
@@ -837,32 +868,6 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                         : 'Download CSV and email to admonitoring@dae.gov.bd or ddimplement@dae.gov.bd.'}
                     </div>
                   </div>
-
-                  {/* Target progress */}
-                  <div className="flex flex-col gap-1 bg-amber-50/40 border border-amber-100/50 p-2.5 rounded-xl text-[10.5px]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-amber-800 flex items-center gap-1">
-                        <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-                        {t.targetText}
-                      </span>
-                      <span className="font-bold text-amber-800 text-[10px]">
-                        {language === 'bn' ? '৫ বছরে ২৫ কোটি' : '250M in 5 Yrs'}
-                      </span>
-                    </div>
-                    <p className="text-gray-500 leading-relaxed mt-1">
-                      {language === 'bn'
-                        ? `আপনার অঞ্চল থেকে ২৫ কোটি গাছ রোপণ কর্মসূচিতে অনন্য অবদান রাখছেন।`
-                        : `Your submissions contribute toward the national 250M plantation target.`}
-                    </p>
-                  </div>
-
-                  {/* Sync status tip */}
-                  <div className="p-2.5 rounded-xl border bg-emerald-50/50 border-emerald-100/80 text-emerald-800 text-[10.5px] leading-relaxed flex gap-1.5">
-                    <Info className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                    <p>{t.syncTip}</p>
-                  </div>
-                </>
-              )}
             </div>
           )}
 
