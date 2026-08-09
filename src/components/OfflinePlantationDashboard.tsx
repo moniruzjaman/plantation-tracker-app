@@ -36,6 +36,7 @@ import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
 import RegistryTab from './RegistryTab';
 import { SEED_PLANTATIONS, SEED_STATS } from '../data/seedPlantations';
+import { useSheetPlantations } from '../hooks/useSheetPlantations';
 import {
   fetchSeedSyncStatus,
   syncSeedRecords,
@@ -324,6 +325,26 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
 
   const sortedDistricts = Object.entries(districtMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const topSpecies = Object.entries(speciesMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Live App_Entry sheet stats -- every officer's synced entries, not just
+  // this device's. Supersedes the frozen SEED_STATS snapshot below once
+  // it loads, exactly the same live-first / frozen-fallback pattern
+  // MapTab.tsx already uses for the map markers themselves.
+  const { entries: sheetEntries, live: sheetLive } = useSheetPlantations();
+  const liveSheetStats = useMemo(() => {
+    let totalSeedlings = 0;
+    const byDistrict: Record<string, number> = {};
+    const bySpecies: Record<string, number> = {};
+    sheetEntries.forEach((e) => {
+      if (e.district) byDistrict[e.district] = (byDistrict[e.district] || 0) + (e.totalQuantity || 0);
+      e.seedlings.forEach((sd) => {
+        totalSeedlings += sd.quantity || 0;
+        if (sd.speciesName) bySpecies[sd.speciesName] = (bySpecies[sd.speciesName] || 0) + sd.quantity;
+      });
+    });
+    return { totalEntries: sheetEntries.length, totalSeedlings, byDistrict, bySpecies };
+  }, [sheetEntries]);
+  const displayedSheetStats = sheetLive ? liveSheetStats : SEED_STATS;
   const unsyncedDisplay = syncState?.unsyncedCount ?? (totalLogs - syncedCount);
 
   // Text translations
@@ -596,15 +617,17 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                     </div>
                   )}
 
-                  {/* ─── Seed Data Block (from Tree Plantation Workbook) ─── */}
+                  {/* ─── App_Entry / Seed Data Block ─── */}
                   <div className="flex flex-col gap-2 border-t-2 border-dashed border-sky-200 pt-3">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-sky-800 text-[11px] flex items-center gap-1.5">
                         <Database className="w-3.5 h-3.5 text-sky-500" />
-                        {language === 'bn' ? 'সিড ডেটা (Workbook)' : 'Seed Data (Workbook)'}
+                        {sheetLive
+                          ? (language === 'bn' ? 'জাতীয় তথ্য (App_Entry — সকল অফিসার)' : 'National Data (App_Entry — all officers)')
+                          : (language === 'bn' ? 'সিড ডেটা (অফলাইন স্ন্যাপশট)' : 'Seed Data (offline snapshot)')}
                       </span>
-                      <span className="text-[9px] text-sky-600 font-mono bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100">
-                        process data
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${sheetLive ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-sky-600 bg-sky-50 border-sky-100'}`}>
+                        {sheetLive ? (language === 'bn' ? '📡 লাইভ' : '📡 live') : (language === 'bn' ? 'অফলাইন' : 'offline')}
                       </span>
                     </div>
 
@@ -615,24 +638,24 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                         <span className="text-[9px] font-medium text-sky-800 opacity-80 uppercase">
                           {language === 'bn' ? 'মোট এন্ট্রি' : 'Entries'}
                         </span>
-                        <span className="text-base font-extrabold text-sky-700">{toBnNum(SEED_STATS.totalEntries)}</span>
+                        <span className="text-base font-extrabold text-sky-700">{toBnNum(displayedSheetStats.totalEntries)}</span>
                       </div>
                       <div className="bg-sky-50/60 border border-sky-100 rounded-lg p-2 flex flex-col items-center text-center">
                         <Leaf className="w-3.5 h-3.5 text-sky-600 mb-0.5" />
                         <span className="text-[9px] font-medium text-sky-800 opacity-80 uppercase">
                           {language === 'bn' ? 'মোট চারা' : 'Seedlings'}
                         </span>
-                        <span className="text-base font-extrabold text-sky-700">{toBnNum(SEED_STATS.totalSeedlings)}</span>
+                        <span className="text-base font-extrabold text-sky-700">{toBnNum(displayedSheetStats.totalSeedlings)}</span>
                       </div>
                     </div>
 
                     {/* Seed top species (top 3) */}
-                    {Object.entries(SEED_STATS.bySpecies).length > 0 && (
+                    {Object.entries(displayedSheetStats.bySpecies).length > 0 && (
                       <div className="flex flex-col gap-1">
                         <span className="text-[9.5px] font-semibold text-gray-500 uppercase tracking-wider">
                           {language === 'bn' ? 'শীর্ষ প্রজাতি (সিড)' : 'Top Species (Seed)'}
                         </span>
-                        {Object.entries(SEED_STATS.bySpecies)
+                        {Object.entries(displayedSheetStats.bySpecies)
                           .sort((a, b) => b[1] - a[1])
                           .slice(0, 3)
                           .map(([name, count]) => (
@@ -647,12 +670,12 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                     )}
 
                     {/* Seed top districts */}
-                    {Object.entries(SEED_STATS.byDistrict).length > 0 && (
+                    {Object.entries(displayedSheetStats.byDistrict).length > 0 && (
                       <div className="flex flex-col gap-1">
                         <span className="text-[9.5px] font-semibold text-gray-500 uppercase tracking-wider">
                           {language === 'bn' ? 'জেলা বিতরণ (সিড)' : 'District Spread (Seed)'}
                         </span>
-                        {Object.entries(SEED_STATS.byDistrict)
+                        {Object.entries(displayedSheetStats.byDistrict)
                           .sort((a, b) => b[1] - a[1])
                           .slice(0, 3)
                           .map(([name, count]) => (
@@ -799,7 +822,7 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
                           <tfoot>
                             <tr className="bg-emerald-50 font-bold text-emerald-800">
                               <td className="p-1.5" colSpan={3}>{language === 'bn' ? 'সর্বমোট' : 'Total'}</td>
-                              <td className="p-1.5 text-right">{toBnNum(SEED_STATS.totalSeedlings)}</td>
+                              <td className="p-1.5 text-right">{toBnNum(displayedSheetStats.totalSeedlings)}</td>
                               <td className="p-1.5" colSpan={5}>{toBnNum(SEED_PLANTATIONS.length)} {language === 'bn' ? 'টি এন্ট্রি' : 'entries'}</td>
                             </tr>
                           </tfoot>
