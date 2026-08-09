@@ -1,0 +1,264 @@
+// =============================================================================
+// Plantation Tracker — Prisma Schema
+// =============================================================================
+// Relational mapping of the 17-column official monthly proforma
+// "০৫ বছরে ২৫ কোটি বৃক্ষ রোপণ কর্মসূচি"
+//
+// Tables:
+//   Submission   — one per field-visit / form submit (parent)
+//   Seedling     — repeatable species rows per submission (child 1:N)
+//   Photo        — geo-verified evidence trail (child 1:N)
+//   Monitoring   — revisit measurements per submission (child 1:N) [NEW]
+//   UserProfile  — Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts
+//   SeedSync     — Tracks when the workbook seed data was last pushed to DB
+//
+// Provider is PostgreSQL (Neon) — switched from SQLite on the neon-reconnect
+// branch. PostGIS is NOT yet enabled; once the Neon extension is available,
+// run `CREATE EXTENSION IF NOT EXISTS postgis;` against the database and add
+// spatial columns / indexes in a follow-up migration.
+//
+// Connection pattern:
+//   DATABASE_URL  → pooled connection string (pgBouncer, port 5432) for runtime
+//   DIRECT_URL    → direct connection string (no pooler) for migrations
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Main Submission (17-column proforma, one row per field visit) ──────────
+
+model Submission {
+  id        String   @id @default(cuid())
+  clientUid String   @unique
+
+  entryMode String   @default("dae_officer")
+
+  // Location — report columns 2–6
+  region   String   @default("")
+  district String   @default("")
+  upazila  String   @default("")
+  union    String   @default("")
+  blockId  String?
+  blockName String?
+  village  String   @default("")
+
+  // Report column 9
+  plantationDate String
+
+  // Report column 10 — GPS
+  latitude  Float    @default(0)
+  longitude Float    @default(0)
+  accuracy  Float    @default(0)
+
+  // Report columns 11–12 — caretaker
+  caretakerName    String @default("")
+  caretakerMobile  String @default("")
+
+  // Report columns 13–14 — SAAO
+  saaoId     String?
+  saaoName   String @default("")
+  saaoMobile String @default("")
+
+  // Report columns 15–16 — monitoring officer
+  monitoringOfficerId     String?
+  monitoringOfficerName   String @default("")
+  monitoringOfficerMobile String @default("")
+
+  // Report column 17
+  remarks String?
+
+  // App-only extras
+  areaSqMeters  Float?
+  spacingFlag   Boolean @default(false)
+
+  nurserySourceId       String?
+  nurserySourceName     String?
+  nurserySourceLatitude  Float?
+  nurserySourceLongitude Float?
+
+  // ─── VM0047 / Gold Standard Fields ───
+  trackingMethod      String   @default("census")   // "census" | "area"
+  treeSerial          String?                       // e.g. "BD-TREE-100024"
+  vm0047HealthStatus  String   @default("healthy")  // "healthy" | "stressed" | "dead"
+  geoPolygon          String?                       // GeoJSON polygon (text; real geometry in PostGIS)
+  modellingUnitId     String?                       // Gold Standard carbon grouping key
+  sdgIncomeChange     String?                       // SDG 1: income change
+  sdgSoilHealth       String?                       // SDG 15: soil health
+  biodiversityNote    String?                       // SDG 15: biodiversity
+
+  synced   Boolean  @default(true)
+  syncedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seedlings   Seedling[]
+  photos      Photo[]
+  monitorings Monitoring[]
+
+  @@index([district])
+  @@index([upazila])
+  @@index([synced])
+  @@index([createdAt])
+  @@index([plantationDate])
+  @@index([vm0047HealthStatus])
+  @@index([trackingMethod])
+  @@index([modellingUnitId])
+}
+
+// ─── Seedling entries (report columns 7–8, repeatable per submission) ──────
+
+model Seedling {
+  id          String @id @default(cuid())
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  plantTypeId String?
+  speciesId   String?
+  speciesName String
+  count       Int    @default(0)
+
+  // VM0047 carbon factor (IPCC Tier 2)
+  carbonFactor Float?
+
+  @@index([submissionId])
+  @@index([speciesName])
+}
+
+// ─── Photo evidence trail ──────────────────────────────────────────────────
+
+model Photo {
+  id                      String  @id @default(cuid())
+  submissionId            String
+  submission              Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  stage                   String  @default("planting")
+  url                     String
+  sha256                  String  @default("")
+  capturedAt              String
+  latitude                Float   @default(0)
+  longitude               Float   @default(0)
+  distanceFromOriginMeters Float?
+
+  // VM0047 photo type
+  photoType               String? // "qr_closeup" | "full_tree" | "context" | "general"
+
+  @@index([submissionId])
+  @@index([stage])
+  @@index([photoType])
+}
+
+// ─── Monitoring Revisits (NEW — VM0047 5-year checkpoint data) ─────────────
+// One row per monitoring visit per submission.
+// Stores DBH, height, canopy measurements for carbon stock calculation.
+
+model Monitoring {
+  id              String   @id @default(cuid())
+  submissionId    String
+  submission      Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  stage           String   @default("month_6") // "month_6" | "year_1" | "year_2" | "year_3"
+  monitoredAt     DateTime @default(now())
+
+  // Field measurements (averaged across sampled trees in the submission)
+  avgHeightM      Float?   // Average tree height in meters
+  avgDbhCm        Float?   // Average Diameter at Breast Height in cm
+  avgCanopyRadiusM Float?  // Average canopy radius in meters
+
+  // Health assessment
+  vm0047HealthStatus String @default("healthy") // "healthy" | "stressed" | "dead"
+  survivalCount    Int?    // Number of surviving trees observed
+  deadCount        Int?    // Number of dead trees observed
+
+  // Monitoring officer GPS
+  latitude        Float    @default(0)
+  longitude       Float    @default(0)
+  accuracy        Float    @default(0)
+
+  // SDG co-benefit observations
+  sdgIncomeChange String?
+  sdgSoilHealth   String?
+  biodiversityNote String?
+
+  remarks         String?
+
+  @@index([submissionId])
+  @@index([stage])
+  @@index([vm0047HealthStatus])
+}
+
+// ─── User Profile ───────────────────────────────────────────────────────────
+// Admin / Cadre / Monitoring Officer / SAAO / Citizen accounts.
+//
+// Bootstrap flow:
+//   1. App install first time → fetches /api/auth/bootstrap (returns allow-list)
+//   2. If the device's email (or user-entered email) matches an allow-list
+//      entry → auto-creates a UserProfile row with the allow-list's role/name/
+//      mobile/designation pre-populated.
+//   3. If no match → user starts as 'citizen'. Name + Mobile are required
+//      before any form submission (mandatory fields).
+//   4. Optional fields (NID, JobID, designation, district, upazila) unlock
+//      token-boost rewards via profileCompletionBonus.
+//
+// Idempotent upsert by `email` (unique). The allow-list lives in
+// seed/admins.json so it can be updated without a migration.
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String   @default("")
+  mobile    String   @default("")
+
+  // Role hierarchy: citizen < officer (SAAO) < cadre (monitoring officer) < admin
+  role      String   @default("citizen")   // 'citizen' | 'officer' | 'cadre' | 'admin'
+
+  // Optional identity fields — enhance token rewards when filled
+  nid             String?   // National ID (10/13/17-digit BD format)
+  jobId           String?   // DAE job ID (e.g. SAAO-12345)
+  designation     String?   // 'SAAO' | 'UAO' | 'AEO' | 'AAO' | 'DDA' | 'Deputy Project Director'
+  district        String?
+  upazila         String?
+  blockId         String?
+  photoUrl        String?
+
+  // Gamification state (mirrored from IndexedDB client-side)
+  xp                      Int      @default(0)
+  greenTokens             Int      @default(0)
+  streakCount             Int      @default(0)
+  profileCompletionBonus  Boolean  @default(false)
+
+  // Bootstrap traceability
+  bootstrapSource  String?  // 'allow-list' | 'manual' | 'admin-invite'
+  invitedBy        String?  // email of the admin who invited (nullable for self-registered)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([district])
+  @@index([upazila])
+}
+
+// ─── Seed Sync Tracking ─────────────────────────────────────────────────────
+// Records each bulk-upsert of the workbook's "process data" sheet into the
+// Submission table. Used by the Dashboard "Sync Seed Data" button to show
+// the last sync time + record count + source workbook hash.
+
+model SeedSync {
+  id              String   @id @default(cuid())
+  syncedAt        DateTime @default(now())
+  recordCount     Int
+  sourceFileName  String   @default("Tree_Plantation_Reporting_Workbook.xlsx")
+  sourceFileHash  String   @default("")   // SHA-256 of the workbook file
+  syncedByEmail   String?                 // which admin triggered the sync
+  notes           String?
+
+  @@index([syncedAt])
+}
