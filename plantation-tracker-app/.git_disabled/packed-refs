@@ -1,0 +1,12 @@
+# pack-refs with: peeled fully-peeled sorted 
+678be2031ba27d5acb0d9fd205794a87a6f67aec refs/remotes/origin/feat/brand-og-share-v3-icons
+fc32c7244fbba7be27415b118f9f12be14631316 refs/remotes/origin/feat/brand-og-share-v3-icons-prod
+dc0b7171d2fcacb1e11d7a34597664e21994197c refs/remotes/origin/feature/header-dae-logo-status-hub
+31c53bcdadb16287083fb561481ca7a8d3e9e286 refs/remotes/origin/feature/new-submission-wizard-phase1
+bbd4f8f5c41e9da3b4e04b23ed837bd04d08f036 refs/remotes/origin/feature/offline-mapping-and-registry-dashboard
+6bc2a2fb63ec5b0d7ecbe38330963ca8a62dee15 refs/remotes/origin/main
+b961a079aa0eb69383a8e1def54d83ce165e75e9 refs/remotes/origin/master
+1e22085a5d288d0119a44c4d6753a12773953520 refs/remotes/origin/moniruzjaman-studious-enigma
+8929819db1c3e329434e59ae7b2d45193933eb5c refs/remotes/origin/neon-reconnect
+7095091184f3f1255ebfd2df924dc81019484552 refs/remotes/origin/production
+a92fc0c888ed4c01f3deac7e3060d15be7bd2041 refs/remotes/origin/rebuild/react-vite-merge

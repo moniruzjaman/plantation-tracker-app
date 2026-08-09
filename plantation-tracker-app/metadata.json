@@ -1,0 +1,10 @@
+{
+  "name": "plantation_tracker V1 ",
+  "description": "To get realtime plantation update information along with the geo location ",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
