@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Search, MapPin, Phone, Camera, X, ListFilter } from 'lucide-react';
+import { Search, MapPin, Phone, Camera, X, ListFilter, Radio } from 'lucide-react';
 import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
 import { KURIGRAM_UPAZILAS, colorForUpazila } from '../utils/upazilaColors';
+import { canonicalizeUpazila } from '../utils/canonicalizeUpazila';
+import { useSheetPlantations } from '../hooks/useSheetPlantations';
+import { localToRegistryEntry, sheetEntryToRegistryEntry, type RegistryEntry } from './registryEntryAdapter';
 import RegistryDetailModal from './RegistryDetailModal';
 
 interface RegistryTabProps {
@@ -13,20 +16,33 @@ interface RegistryTabProps {
 type TriFilter = 'all' | 'with' | 'without';
 
 /**
- * Searchable, filterable browse view over all local submissions — the
- * "oversight" counterpart to the map's data-entry-focused view. Ported
- * from the kurigram_nursery_registry dashboard pattern (see
+ * Searchable, filterable browse view over every known plantation entry --
+ * this device's own local submissions AND live App_Entry sheet rows from
+ * every officer (see useSheetPlantations.ts), combined into one list.
+ * There's no reliable id linking a local submission to its (possible)
+ * synced copy on the sheet, so the two are shown side by side rather than
+ * deduplicated -- attempting a fuzzy match risks silently hiding real
+ * entries or merging two different ones. Each row is tagged with its
+ * source (📡 badge for sheet entries) so it's clear which is which.
+ * Ported from the kurigram_nursery_registry dashboard pattern (see
  * docs/skills/registry-dashboard.md): global search + facet filters +
  * stat cards + Dialog-based per-record drill-down, all computed once
  * from the same in-memory array (no separate fetch per view).
  */
 export default function RegistryTab({ submissions, language }: RegistryTabProps) {
+  const { entries: sheetEntries } = useSheetPlantations();
   const [query, setQuery] = useState('');
   const [activeUpazilas, setActiveUpazilas] = useState<string[]>([]);
   const [gpsFilter, setGpsFilter] = useState<TriFilter>('all');
   const [mobileFilter, setMobileFilter] = useState<TriFilter>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [detail, setDetail] = useState<PlantationSubmission | null>(null);
+  const [detail, setDetail] = useState<RegistryEntry | null>(null);
+
+  // Local + sheet, combined once per data change. See registryEntryAdapter.ts.
+  const allEntries = useMemo<RegistryEntry[]>(
+    () => [...submissions.map(localToRegistryEntry), ...sheetEntries.map(sheetEntryToRegistryEntry)],
+    [submissions, sheetEntries]
+  );
 
   const t = {
     searchPlaceholder: language === 'bn' ? 'গ্রাম, প্রজাতি বা পরিচর্যাকারী খুঁজুন...' : 'Search village, species, caretaker...',
@@ -43,12 +59,13 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
     upazilas: language === 'bn' ? 'উপজেলা' : 'Upazilas',
     noResults: language === 'bn' ? 'কোনো ফলাফল পাওয়া যায়নি' : 'No results found',
     seedlings: language === 'bn' ? 'চারা' : 'seedlings',
+    fromSheet: language === 'bn' ? 'App_Entry' : 'App_Entry',
   };
 
   // ---- Facet filtering, all over the same in-memory array ----
   const filtered = useMemo(() => {
-    return submissions
-      .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(s.upazila))
+    return allEntries
+      .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(s.upazila)))
       .filter((s) => {
         if (gpsFilter === 'all') return true;
         const hasGps = !!s.verificationLatitude;
@@ -71,16 +88,16 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
         );
       })
       .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-  }, [submissions, activeUpazilas, gpsFilter, mobileFilter, query]);
+  }, [allEntries, activeUpazilas, gpsFilter, mobileFilter, query]);
 
   // ---- Cheap derived stat cards ----
   const stats = useMemo(() => {
-    const total = submissions.length;
-    const withGps = submissions.filter((s) => !!s.verificationLatitude).length;
-    const withMobile = submissions.filter((s) => !!s.caretakerMobile).length;
-    const upazilaCount = new Set(submissions.map((s) => s.upazila).filter(Boolean)).size;
+    const total = allEntries.length;
+    const withGps = allEntries.filter((s) => !!s.verificationLatitude).length;
+    const withMobile = allEntries.filter((s) => !!s.caretakerMobile).length;
+    const upazilaCount = new Set(allEntries.map((s) => s.upazila).filter(Boolean)).size;
     return { total, withGps, withMobile, upazilaCount };
-  }, [submissions]);
+  }, [allEntries]);
 
   const toggleUpazila = (u: string) => {
     setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
@@ -222,7 +239,7 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
 
       {/* Result count */}
       <div className="text-[10px] text-gray-400">
-        {toBnNum(filtered.length)} / {toBnNum(submissions.length)}
+        {toBnNum(filtered.length)} / {toBnNum(allEntries.length)}
       </div>
 
       {/* List */}
@@ -232,7 +249,7 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
         )}
         {filtered.map((s) => {
           const total = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
-          const color = colorForUpazila(s.upazila);
+          const color = colorForUpazila(canonicalizeUpazila(s.upazila));
           return (
             <button
               key={s.id}
@@ -266,7 +283,13 @@ export default function RegistryTab({ submissions, language }: RegistryTabProps)
                     <Camera size={9} /> {toBnNum(s.photos.length)}
                   </span>
                 )}
-                {!s.synced && <span className="ml-auto text-amber-600 shrink-0">⏳</span>}
+                {s.source === 'sheet' ? (
+                  <span className="ml-auto flex items-center gap-0.5 shrink-0 text-blue-500">
+                    <Radio size={9} /> {t.fromSheet}
+                  </span>
+                ) : (
+                  !s.synced && <span className="ml-auto text-amber-600 shrink-0">⏳</span>
+                )}
               </div>
             </button>
           );

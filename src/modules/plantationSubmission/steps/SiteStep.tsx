@@ -10,6 +10,7 @@ import { toBnNum } from '../../../utils/mapHelper';
 import { roundCoord, formatCoord } from '../utils/coords';
 import { isWithinBangladesh } from '../../../data/kurigramUpazilaBounds';
 import { findContainingUpazila, isWithinUpazilaPolygon } from '../../../data/kurigramUpazilaPolygons';
+import { canonicalizeUpazila } from '../../../utils/canonicalizeUpazila';
 
 interface SiteStepProps {
   site: PlantationSite;
@@ -89,7 +90,15 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
         ...prev,
         division: result.division || prev.division,
         district: result.district || prev.district,
-        upazila: result.upazila || prev.upazila,
+        // Reconciled against our own canonical spelling here, at the
+        // single point every submission's upazila value originates from
+        // (Nominatim's raw OSM text otherwise flows straight into
+        // storage) -- see canonicalizeUpazila.ts for why this matters:
+        // an uncanonicalized value silently fails every downstream
+        // exact-match comparison (map filter pills, marker color,
+        // geofence checks) even though it's obviously the same real
+        // upazila to a person reading it.
+        upazila: result.upazila ? canonicalizeUpazila(result.upazila) : prev.upazila,
         union: result.union || prev.union,
         villageOrRoad: result.villageOrRoad || prev.villageOrRoad,
         postalCode: result.postalCode || prev.postalCode,
@@ -246,6 +255,7 @@ export default function SiteStep({ site, onChange, language = 'bn' }: SiteStepPr
                 type="text"
                 value={site.location[key] as string}
                 onChange={(e) => setLocation((prev) => ({ ...prev, [key]: e.target.value }))}
+                onBlur={key === 'upazila' ? (e) => setLocation((prev) => ({ ...prev, upazila: canonicalizeUpazila(e.target.value) })) : undefined}
                 className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
