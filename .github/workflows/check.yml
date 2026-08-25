@@ -1,0 +1,43 @@
+name: Type Check & Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  check:
+    name: tsc --noEmit + vitest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          # vitest 4.x requires Node ^20 || ^22 || >=24 (jsdom needs >=18,
+          # so it wasn't the blocker). Node 18 doesn't hard-fail npm ci --
+          # there's no engine-strict config in this repo, so npm only
+          # warns -- but running vitest on a version it doesn't support is
+          # still worth avoiding rather than relying on an unenforced
+          # warning. 22 matches what's been used to verify these tests
+          # pass locally throughout this PR.
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+        run: npm test

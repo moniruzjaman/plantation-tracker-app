@@ -3,6 +3,33 @@
 This folder contains the **authoritative seed data source** for the NDVI
 simulator and canopy growth tracker on the Map page.
 
+## Live sheet sync (recommended)
+
+`AppsScript.gs` is the backend bound to the Tree Plantation Reporting
+Workbook's App_Entry sheet. Deployed as a web app and pointed to via the
+`GAS_WEBHOOK_URL` environment variable, it powers `/api/sheet/list`
+(server.ts) which `src/hooks/useSheetPlantations.ts` polls to plot every
+field submission on the ম্যাপ tab — not just the 36-row snapshot below.
+
+1. Open the workbook -> Extensions -> Apps Script, paste in `AppsScript.gs`
+   (replacing the existing Code.gs), and Deploy -> Manage deployments ->
+   New version (or a fresh Web app deployment: Execute as **Me**, Who has
+   access **Anyone**).
+2. Copy the deployment's `/exec` URL into `GAS_WEBHOOK_URL` (`.env` locally,
+   or the Vercel/host's environment variables in production).
+3. Reload the ম্যাপ tab. If the fetch succeeds, live sheet markers replace
+   the static seed markers automatically (🔴 লাইভ শীট থেকে in the popup vs
+   📦 অফলাইন সিড স্ন্যাপশট for the fallback). If `GAS_WEBHOOK_URL` is unset
+   or the sheet is briefly unreachable, the map falls back to the frozen
+   snapshot below so it's never empty.
+
+The `map_view` sheet inside the same workbook was evaluated as an
+alternative source but isn't used here — it mirrors App_Entry but with more
+rows carrying blank/invalid coordinates (e.g. literal "Invalid Latitude
+range" placeholder text) and no dedup, since `listEntries_()` in
+`AppsScript.gs` already computes a cleaner, deduplicated version straight
+from App_Entry (the actual source of truth).
+
 ## Files
 
 - `Tree_Plantation_Reporting_Workbook.xlsx` — the original workbook uploaded

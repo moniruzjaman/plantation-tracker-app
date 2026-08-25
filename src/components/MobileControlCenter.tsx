@@ -18,7 +18,6 @@ import {
   Check,
   CheckCircle2,
   HardDrive,
-  Share2,
   User,
   Download
 } from 'lucide-react';
@@ -26,7 +25,6 @@ import {
 import { GeoState } from './GeolocationIndicator';
 import { NetworkStatusData } from './NetworkStatus';
 import type { PlantationSubmission } from '../types/plantation';
-import { shareApp } from '../utils/shareApp';
 
 interface MobileControlCenterProps {
   networkState: NetworkStatusData | null;
@@ -42,7 +40,6 @@ export default function MobileControlCenter({ networkState, geoState, submission
   const [activeTab, setActiveTab] = useState<'db' | 'net' | 'gps' | 'mydata'>('db');
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [copied, setCopied] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
   
   const [ruralDataSaver, setRuralDataSaver] = useState(() => localStorage.getItem('rural_data_saver_active') === 'true');
 
@@ -278,41 +275,6 @@ export default function MobileControlCenter({ networkState, geoState, submission
             </strong>
           </span>
         </motion.button>
-        
-        {/* Guide Button — opens the shared UserGuideModal */}
-        <button
-          onClick={handleOpenUserGuide}
-          className="p-2.5 bg-white text-gray-800 rounded-full shadow-lg border border-gray-150 cursor-pointer hover:bg-slate-50 transition-all flex items-center justify-center"
-          title={language === 'bn' ? 'ব্যবহার নির্দেশিকা' : 'User Guide'}
-        >
-          <HelpCircle className="w-3.5 h-3.5" />
-        </button>
-
-        {/* Sharing Button — uses the shared shareApp() utility so behavior/content
-            stays consistent with the header's share button. */}
-        <button
-          onClick={() => {
-            shareApp().then((result) => {
-              if (result === 'copied') {
-                setShareCopied(true);
-                setTimeout(() => setShareCopied(false), 2000);
-              }
-            });
-          }}
-          className="p-2.5 bg-white text-gray-800 rounded-full shadow-lg border border-gray-150 cursor-pointer hover:bg-slate-50 transition-all flex items-center justify-center relative"
-          title={language === 'bn' ? 'শেয়ার করুন' : 'Share'}
-        >
-          {shareCopied ? (
-            <Check className="w-3.5 h-3.5 text-emerald-600" />
-          ) : (
-            <Share2 className="w-3.5 h-3.5" />
-          )}
-          {shareCopied && (
-            <span className="absolute -top-8 right-0 bg-slate-800 text-white text-[10px] py-1 px-2 rounded shadow-md whitespace-nowrap font-sans">
-              {language === 'bn' ? 'লিঙ্ক কপি করা হয়েছে!' : 'Link Copied!'}
-            </span>
-          )}
-        </button>
 
         {/* Dynamic Slide-Up Bottom Drawer sheet popup */}
         <AnimatePresence>

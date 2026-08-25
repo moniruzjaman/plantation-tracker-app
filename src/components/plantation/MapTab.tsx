@@ -13,6 +13,70 @@ import {
 } from '../../utils/mapHelper';
 import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
 import { SEED_PLANTATIONS } from '../../data/seedPlantations';
+import { useSheetPlantations } from '../../hooks/useSheetPlantations';
+import { getSubmissions, saveSubmission } from '../../lib/db';
+import type { PlantationSubmission } from '../../types/plantation';
+import { colorForUpazila, UPAZILA_COLORS } from '../../utils/upazilaColors';
+import { canonicalizeUpazila } from '../../utils/canonicalizeUpazila';
+import MapFilterBar from './MapFilterBar';
+import MapEditModal from './MapEditModal';
+import { createEmptySubmission } from '../../types/plantation';
+
+// ---------- Species-based category color coding ----------
+// Maps Bengali species name keywords to plant type categories for
+// color-coding markers when the data lacks a formal plantTypeId.
+// Falls back to the upazila color system for submissions that do
+// have an upazila, but seed/sheet entries only have speciesName.
+
+const SPECIES_CATEGORY_COLORS: Record<string, string> = {
+  // ফলদ (Fruit) — greens
+  'আম': '#16a34a',
+  'পেয়ারা': '#15803d',
+  'লেবু': '#22c55e',
+  'মাল্টা': '#4ade80',
+  'লিচু': '#86efac',
+  'কাঁঠাল': '#166534',
+  'নারিকেল': '#059669',
+  'কমলা': '#65a30d',
+  'ফলদ': '#16a34a',
+  // বনজ (Forest/Timber) — browns/earth tones
+  'মেহগনি': '#92400e',
+  'সেগুন': '#78350f',
+  'শিশু': '#a16207',
+  'আকাশমণি': '#b45309',
+  'বনজ': '#92400e',
+  'রেইনট্রি': '#854d0e',
+  // ঔষধি (Medicinal) — purples
+  'নিম': '#7c3aed',
+  'ঘৃতকুমারী': '#8b5cf6',
+  'ঔষধি': '#7c3aed',
+  // শোভাবর্ধনকারী (Ornamental) — pinks
+  'কৃষ্ণচূড়া': '#ec4899',
+  'শোভা': '#ec4899',
+  // বাঁশ/বেত (Bamboo/Cane) — olives
+  'বাঁশ': '#65a30d',
+  'বেত': '#4d7c0f',
+};
+
+const DEFAULT_SPECIES_COLOR = '#047857'; // emerald-700, preserves existing palette for unknowns
+
+/** Infer a color from speciesName by checking for known keywords */
+function colorForSpecies(speciesName: string): string {
+  if (!speciesName) return DEFAULT_SPECIES_COLOR;
+  // Check each category keyword against the species name
+  for (const [keyword, color] of Object.entries(SPECIES_CATEGORY_COLORS)) {
+    if (speciesName.includes(keyword)) return color;
+  }
+  return DEFAULT_SPECIES_COLOR;
+}
+
+/** Determine marker color: prefer upazila color for real submissions,
+ *  fall back to species-based category color for seed/sheet entries */
+function markerColor(upazila: string | undefined, speciesName: string): string {
+  const canonical = upazila ? canonicalizeUpazila(upazila) : upazila;
+  if (canonical && UPAZILA_COLORS[canonical]) return UPAZILA_COLORS[canonical];
+  return colorForSpecies(speciesName);
+}
 
 // ---------- Fix #2: Leaflet default marker icon paths break with Vite bundling ----------
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -51,7 +115,7 @@ interface PipelineResult {
 
 function LayerSwitcher({ active, onChange }: { active: LayerId; onChange: (l: LayerId) => void }) {
   return (
-    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
+    <div className="absolute top-16 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
       {(Object.keys(LAYER_LABELS) as LayerId[]).map((id) => (
         <button
           key={id}
@@ -154,7 +218,7 @@ function BoundsTracker({ onBoundsChange }: { onBoundsChange: (b: LatLngBounds) =
 
 function CustomZoomControl({ mapRef }: { mapRef: React.RefObject<LeafletMap | null> }) {
   return (
-    <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
+    <div className="absolute top-16 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
       <button
         onClick={() => mapRef.current?.zoomIn()}
         className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
@@ -266,6 +330,51 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
   // NDVI Simulator & Canopy Growth Tracker panel visibility
   const [simulatorOpen, setSimulatorOpen] = useState(false);
 
+  // ---- Live Google Sheet data (App_Entry via Apps Script), replaces the
+  // frozen SEED_PLANTATIONS snapshot once it loads successfully ----
+  const { entries: sheetEntries, live: sheetLive } = useSheetPlantations();
+
+  // ---- Real plantation submissions layer (color-coded, click-to-edit) ----
+  const [submissions, setSubmissions] = useState<PlantationSubmission[]>([]);
+  const [editingSubmission, setEditingSubmission] = useState<PlantationSubmission | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeUpazilas, setActiveUpazilas] = useState<string[]>([]);
+
+  const reloadSubmissions = useCallback(() => {
+    getSubmissions().then(setSubmissions).catch(() => setSubmissions([]));
+  }, []);
+
+  useEffect(() => {
+    reloadSubmissions();
+  }, [reloadSubmissions]);
+
+  const toggleUpazila = useCallback((u: string) => {
+    setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
+  }, []);
+
+  const filteredSubmissions = submissions
+    .filter((s) => s.latitude && s.longitude)
+    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(s.upazila)))
+    .filter((s) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      return (
+        s.village?.toLowerCase().includes(q) ||
+        s.caretakerName?.toLowerCase().includes(q) ||
+        s.upazila?.toLowerCase().includes(q) ||
+        s.seedlings.some((sd) => sd.speciesName?.toLowerCase().includes(q))
+      );
+    });
+
+  const handleSaveEdit = useCallback(
+    async (updated: PlantationSubmission) => {
+      await saveSubmission(updated);
+      setEditingSubmission(null);
+      reloadSubmissions();
+    },
+    [reloadSubmissions]
+  );
+
   const center: [number, number] = geoState?.coords
     ? [geoState.coords.latitude, geoState.coords.longitude]
     : DEFAULT_CENTER;
@@ -362,55 +471,292 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
           attribution={tiles.attribution}
         />
 
-        {/* Seed plantation markers from the Tree Plantation Reporting Workbook.
-            Each circle marker is colored emerald (matches project palette) and
-            shows a tooltip with the species + count on hover. Click for full
-            details in the popup. */}
-        {SEED_PLANTATIONS
-          .filter((p) => p.latitude !== 0 && p.longitude !== 0)
-          .map((p) => (
+        {/* Plantation markers from the plantation submission system.
+            When the Apps Script live sheet sync (GAS_WEBHOOK_URL) is
+            configured and reachable, every App_Entry row is plotted here
+            (hundreds of live field submissions). If it's unavailable --
+            offline, not configured, or GAS is briefly down -- this falls
+            back to the frozen 36-row SEED_PLANTATIONS snapshot so the map
+            is never empty. Each circle marker is colored emerald (matches
+            project palette) and shows a tooltip on hover; click for the
+            full popup. */}
+        {sheetLive
+          ? sheetEntries
+              .filter((p) => {
+                if (!searchQuery.trim()) return true;
+                const q = searchQuery.trim().toLowerCase();
+                const primarySp = p.seedlings[0]?.speciesName || '';
+                return (
+                  primarySp.toLowerCase().includes(q) ||
+                  p.district?.toLowerCase().includes(q) ||
+                  p.upazila?.toLowerCase().includes(q) ||
+                  p.village?.toLowerCase().includes(q) ||
+                  p.farmerName?.toLowerCase().includes(q)
+                );
+              })
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
+              .map((p, i) => {
+              const primarySpecies = p.seedlings[0]?.speciesName || '';
+              const speciesLabel =
+                p.seedlings.length > 1
+                  ? `${primarySpecies} +${p.seedlings.length - 1}`
+                  : primarySpecies || 'বৃক্ষরোপণ';
+              const mColor = markerColor(p.upazila, primarySpecies);
+              return (
+                <CircleMarker
+                  key={`sheet-${p.submissionId || i}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: mColor,
+                    fillColor: mColor,
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      const sub = createEmptySubmission('citizen');
+                      sub.latitude = p.latitude;
+                      sub.longitude = p.longitude;
+                      sub.accuracy = 10;
+                      sub.district = p.district || '';
+                      sub.upazila = p.upazila || '';
+                      sub.union = p.union || '';
+                      sub.village = p.village || '';
+                      sub.caretakerName = p.farmerName || '';
+                      sub.caretakerMobile = p.farmerMobile || '';
+                      sub.saaoName = p.saaoName || '';
+                      sub.monitoringOfficerName = p.officerName || '';
+                      sub.seedlings = p.seedlings.length > 0
+                        ? p.seedlings.map((sd) => ({ id: crypto.randomUUID(), speciesName: sd.speciesName || '', count: sd.quantity || 0 }))
+                        : [{ id: crypto.randomUUID(), speciesName: primarySpecies || '', count: p.totalQuantity || 0 }];
+                      sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                      sub.remarks = `[লাইভ শীট থেকে আমদানি]`;
+                      setEditingSubmission(sub);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{speciesLabel}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.totalQuantity)} টি · {p.district} / {p.upazila}
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {speciesLabel}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        {p.union && <div><b>ইউনিয়ন/গ্রাম:</b> {p.union} {p.village ? `/ ${p.village}` : ''}</div>}
+                        <div><b>সংখ্যা:</b> {toBnNum(p.totalQuantity)} টি</div>
+                        {p.plantingDate && <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>}
+                        {p.farmerName && (
+                          <div><b>কৃষক:</b> {p.farmerName}{p.farmerMobile ? ` (${p.farmerMobile})` : ''}</div>
+                        )}
+                        {p.saaoName && <div><b>SAAO:</b> {p.saaoName}</div>}
+                        {p.officerName && <div><b>মনিটরিং অফিসার:</b> {p.officerName}</div>}
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 mt-1">🔴 লাইভ শীট থেকে</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const sub = createEmptySubmission('citizen');
+                          sub.latitude = p.latitude;
+                          sub.longitude = p.longitude;
+                          sub.accuracy = 10;
+                          sub.district = p.district || '';
+                          sub.upazila = p.upazila || '';
+                          sub.union = p.union || '';
+                          sub.village = p.village || '';
+                          sub.caretakerName = p.farmerName || '';
+                          sub.caretakerMobile = p.farmerMobile || '';
+                          sub.saaoName = p.saaoName || '';
+                          sub.monitoringOfficerName = p.officerName || '';
+                          sub.seedlings = p.seedlings.length > 0
+                            ? p.seedlings.map((sd) => ({ id: crypto.randomUUID(), speciesName: sd.speciesName || '', count: sd.quantity || 0 }))
+                            : [{ id: crypto.randomUUID(), speciesName: primarySpecies || '', count: p.totalQuantity || 0 }];
+                          sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                          sub.remarks = `[লাইভ শীট থেকে আমদানি]`;
+                          setEditingSubmission(sub);
+                        }}
+                        className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                      >
+                        সম্পাদনা
+                      </button>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })
+          : SEED_PLANTATIONS
+              .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+              .filter((p) => {
+                if (!searchQuery.trim()) return true;
+                const q = searchQuery.trim().toLowerCase();
+                return (
+                  p.speciesName?.toLowerCase().includes(q) ||
+                  p.district?.toLowerCase().includes(q) ||
+                  p.upazila?.toLowerCase().includes(q) ||
+                  p.caretaker?.toLowerCase().includes(q)
+                );
+              })
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
+              .map((p) => {
+                const mColor = markerColor(p.upazila, p.speciesName);
+                return (
+                <CircleMarker
+                  key={`seed-${p.sl}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: mColor,
+                    fillColor: mColor,
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      const sub = createEmptySubmission('citizen');
+                      sub.latitude = p.latitude;
+                      sub.longitude = p.longitude;
+                      sub.accuracy = 10;
+                      sub.district = p.district || '';
+                      sub.upazila = p.upazila || '';
+                      sub.village = '';
+                      sub.caretakerName = p.caretaker || '';
+                      sub.caretakerMobile = '';
+                      sub.saaoName = p.saao || '';
+                      sub.monitoringOfficerName = p.monitoringOfficer || '';
+                      sub.seedlings = [{ id: crypto.randomUUID(), speciesName: p.speciesName, count: p.count }];
+                      sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                      sub.remarks = `[সিড স্ন্যাপশট থেকে আমদানি]`;
+                      setEditingSubmission(sub);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{p.speciesName}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {p.speciesName}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
+                        <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
+                        <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-amber-600 mt-1">📦 অফলাইন সিড স্ন্যাপশট</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const sub = createEmptySubmission('citizen');
+                          sub.latitude = p.latitude;
+                          sub.longitude = p.longitude;
+                          sub.accuracy = 10;
+                          sub.district = p.district || '';
+                          sub.upazila = p.upazila || '';
+                          sub.village = '';
+                          sub.caretakerName = p.caretaker || '';
+                          sub.caretakerMobile = '';
+                          sub.saaoName = p.saao || '';
+                          sub.monitoringOfficerName = p.monitoringOfficer || '';
+                          sub.seedlings = [{ id: crypto.randomUUID(), speciesName: p.speciesName, count: p.count }];
+                          sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                          sub.remarks = `[সিড স্ন্যাপশট থেকে আমদানি]`;
+                          setEditingSubmission(sub);
+                        }}
+                        className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                      >
+                        সম্পাদনা
+                      </button>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+                );
+              })}
+
+        {/* Real plantation submissions, color-coded per upazila. Click a
+            marker to see the summary, then "সম্পাদনা" opens MapEditModal
+            for on-site corrections (location, seedling counts, caretaker
+            contact) — writes back through the same offline sync queue
+            used by the entry form. */}
+        {filteredSubmissions.map((s) => {
+          const color = colorForUpazila(canonicalizeUpazila(s.upazila));
+          const totalCount = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
+          return (
             <CircleMarker
-              key={`seed-${p.sl}`}
-              center={[p.latitude, p.longitude]}
-              radius={6}
+              key={s.id}
+              center={[s.latitude, s.longitude]}
+              radius={7}
               pathOptions={{
-                color: '#047857',          // emerald-700 ring
-                fillColor: '#10b981',       // emerald-500 fill
-                fillOpacity: 0.75,
+                color,
+                fillColor: color,
+                fillOpacity: 0.8,
                 weight: 2,
               }}
             >
               <Tooltip direction="top" offset={[0, -6]} opacity={1}>
                 <div className="text-[10px] leading-tight">
-                  <div className="font-bold">{p.speciesName}</div>
+                  <div className="font-bold">{s.village}</div>
                   <div className="text-slate-600">
-                    {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+                    {toBnNum(totalCount)} টি চারা · {s.upazila}
                   </div>
                 </div>
               </Tooltip>
               <Popup>
-                <div className="text-xs min-w-[180px]">
-                  <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
-                    <Trees size={12} /> {p.speciesName}
+                <div className="text-xs min-w-[180px] space-y-1">
+                  <div className="font-bold text-emerald-800 flex items-center gap-1">
+                    <Trees size={12} /> {s.village}
                   </div>
                   <div className="space-y-0.5 text-[11px] text-slate-700">
-                    <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
-                    <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
-                    <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
-                    <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
-                    <div className="font-mono text-[10px] text-slate-500 mt-1">
-                      {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                    <div><b>উপজেলা:</b> {s.upazila} · {s.union}</div>
+                    <div><b>মোট চারা:</b> {toBnNum(totalCount)} টি</div>
+                    <div><b>পরিচর্যাকারী:</b> {s.caretakerName || '—'}</div>
+                    <div className="font-mono text-[10px] text-slate-500">
+                      {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
                     </div>
+                    {!s.synced && <div className="text-amber-600 text-[10px]">⏳ সিঙ্ক বাকি</div>}
                   </div>
+                  <button
+                    onClick={() => setEditingSubmission(s)}
+                    className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                  >
+                    সম্পাদনা
+                  </button>
                 </div>
               </Popup>
             </CircleMarker>
-          ))}
+          );
+        })}
 
         <BoundsTracker onBoundsChange={setBounds} />
       </MapContainer>
 
       <LayerSwitcher active={activeLayer} onChange={setActiveLayer} />
+      <MapFilterBar
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        activeUpazilas={activeUpazilas}
+        onToggleUpazila={toggleUpazila}
+        onClearUpazilas={() => setActiveUpazilas([])}
+        resultCount={filteredSubmissions.length}
+      />
       <NDVILegend visible={showLegend} />
       <CustomZoomControl mapRef={mapRef} />
       <BoundsOverlay bounds={bounds} />
@@ -419,6 +765,43 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
       {/* Existing compact cloud-pipeline FAB */}
       <div className="absolute bottom-3 right-2 sm:bottom-4 sm:right-3 z-[1000]">
         <CloudPipelineButton state={pipelineState} onRun={runPipeline} />
+      </div>
+
+      {/* In-map GPS capture FAB — captures current device location and
+          opens a new empty submission pre-filled with those coordinates,
+          writing through the same IndexedDB / useOfflineQueue path. */}
+      <div className="absolute bottom-14 left-2 sm:bottom-16 sm:left-3 z-[1000]">
+        <button
+          onClick={() => {
+            if (!navigator.geolocation) {
+              console.warn('Geolocation not supported');
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const sub = createEmptySubmission('citizen');
+                sub.latitude = +pos.coords.latitude.toFixed(6);
+                sub.longitude = +pos.coords.longitude.toFixed(6);
+                sub.accuracy = Math.round(pos.coords.accuracy);
+                sub.plantationDate = new Date().toISOString().slice(0, 10);
+                sub.remarks = '[GPS ক্যাপচার থেকে নতুন এন্ট্রি]';
+                setEditingSubmission(sub);
+                // Also fly the map to the captured location
+                if (mapRef.current) {
+                  mapRef.current.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 1 });
+                }
+              },
+              () => console.warn('GPS capture failed'),
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg bg-white/95 backdrop-blur text-emerald-800 hover:bg-emerald-50 border border-emerald-200 transition-all active:scale-95 cursor-pointer text-xs font-bold"
+          title="বর্তমান অবস্থান থেকে নতুন এন্ট্রি"
+        >
+          <Crosshair size={14} className="text-emerald-600" />
+          <span className="hidden sm:inline">GPS ক্যাপচার</span>
+          <span className="sm:hidden">GPS</span>
+        </button>
       </div>
 
       {/* NDVI Simulator & Canopy Growth Tracker — opens a side panel */}
@@ -452,6 +835,14 @@ export default function MapTab({ geoState, onMapReady }: MapTabProps) {
         onRunPipeline={runPipeline}
         liveNdvi={result?.ndvi_mean ?? null}
       />
+
+      {editingSubmission && (
+        <MapEditModal
+          submission={editingSubmission}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingSubmission(null)}
+        />
+      )}
     </div>
   );
 }

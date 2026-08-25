@@ -15,6 +15,7 @@ import AIAssistant from './components/AIAssistant';
 import PlantationForm from './components/plantation/PlantationForm';
 import MapTab from './components/plantation/MapTab';
 import ProfilePage from './components/plantation/ProfilePage';
+import NewPlantationSubmission from './modules/plantationSubmission/PlantationSubmission';
 import { saveSubmission, getSubmissions } from './utils/submissionStore';
 import { getSubmissionReward } from './lib/db';
 import { useAuth } from './hooks/useAuth';
@@ -244,6 +245,31 @@ export default function App() {
     }
   };
 
+  // New wizard (src/modules/plantationSubmission) already saves each site's
+  // flattened submission itself via submitAllSites -> saveSubmission, so
+  // this only refreshes the status hub + awards rewards -- same reward
+  // logic as handlePlantationSubmit above, just summed across every site
+  // in the draft so a multi-site submit shows one toast, not one per site.
+  const handleNewWizardSubmitted = (submissions: PlantationSubmission[]) => {
+    refreshMcSubmissions();
+
+    let totalXp = 0;
+    let totalTokens = 0;
+    const breakdown: { label: string; xp: number; tokens: number }[] = [];
+    for (const submission of submissions) {
+      const reward = getSubmissionReward(submission);
+      totalXp += reward.xp;
+      totalTokens += reward.tokens;
+      breakdown.push(...reward.breakdown);
+    }
+    if (totalXp > 0) addXp(totalXp, 'ফর্ম জমা');
+    if (totalTokens > 0) addTokens(totalTokens, 'তথ্য পুরস্কার');
+    if (totalXp > 0 || totalTokens > 0) {
+      setRewardToast({ xp: totalXp, tokens: totalTokens, breakdown });
+      setTimeout(() => setRewardToast(null), 4000);
+    }
+  };
+
   // Active tab label for drawer header
   const activeTabDef = tabs.find(t => t.id === currentTab);
   const activeTabLabel = activeTabDef?.label ?? '';
@@ -315,7 +341,7 @@ export default function App() {
           className="absolute inset-0 pointer-events-none"
           style={{ background: 'radial-gradient(circle at 92% -30%, rgba(220,38,38,.35) 0%, rgba(220,38,38,0) 55%)' }}
         />
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-12 sm:h-14 md:h-16 flex items-center justify-between relative">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-14 md:h-16 flex items-center justify-between relative">
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             {/* Hamburger menu for mobile + tablet (below md) */}
             <button
@@ -333,7 +359,7 @@ export default function App() {
             />
             <div className="min-w-0">
               <h1 className="font-bold text-xs sm:text-sm md:text-base leading-tight tracking-tight truncate">বৃক্ষরোপণ মনিটরিং ও তথ্য সংগ্রহ</h1>
-              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 hidden sm:block font-medium">কৃষি সম্প্রসারণ অধিদপ্তর (DAE) | মোবাইল ডাটা সার্ভিস</p>
+              <p className="text-[9px] sm:text-[10px] text-emerald-200/90 font-medium truncate">বৃক্ষ রোপণে সাজাই দেশ, সবার আগে বাংলাদেশ</p>
             </div>
           </div>
 
@@ -507,7 +533,7 @@ export default function App() {
           className="absolute inset-0 overflow-y-auto form-scroll-area"
           style={{ display: currentTab === 'form' ? 'block' : 'none' }}
         >
-          <PlantationForm geoState={geoState} onSubmit={handlePlantationSubmit} />
+          <NewPlantationSubmission onSubmitted={handleNewWizardSubmitted} />
         </div>
 
         <div
