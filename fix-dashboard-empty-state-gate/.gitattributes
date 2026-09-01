@@ -1,0 +1,18 @@
+# Set behavior for all files
+* text=auto
+
+# Explicitly declare binary files to prevent corruption from CRLF line endings conversions
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.aar binary
+*.apk binary
+*.aab binary
+*.so binary
