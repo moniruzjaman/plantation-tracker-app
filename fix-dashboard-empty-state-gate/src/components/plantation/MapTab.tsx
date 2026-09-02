@@ -1,0 +1,848 @@
+import React, { useState, useCallback, useEffect, useRef, type JSX } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMapEvents, useMap, ZoomControl } from 'react-leaflet';
+import L from 'leaflet';
+import type { LatLngBounds, Map as LeafletMap } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { Cloud, RefreshCw, CheckCircle2, AlertTriangle, BarChart3, Plus, Minus, Crosshair, Loader2, Satellite, Trees } from 'lucide-react';
+import type { GeoState } from '../GeolocationIndicator';
+import {
+  type LayerId,
+  getLayerTiles,
+  NDVI_BANDS,
+  toBnNum,
+} from '../../utils/mapHelper';
+import NDVISimulatorPanel, { type PipelineState } from './NDVISimulatorPanel';
+import { SEED_PLANTATIONS } from '../../data/seedPlantations';
+import { useSheetPlantations } from '../../hooks/useSheetPlantations';
+import { getSubmissions, saveSubmission } from '../../lib/db';
+import type { PlantationSubmission } from '../../types/plantation';
+import { colorForUpazila, UPAZILA_COLORS } from '../../utils/upazilaColors';
+import { canonicalizeUpazila } from '../../utils/canonicalizeUpazila';
+import MapFilterBar from './MapFilterBar';
+import MapEditModal from './MapEditModal';
+import { createEmptySubmission } from '../../types/plantation';
+
+// ---------- Species-based category color coding ----------
+// Maps Bengali species name keywords to plant type categories for
+// color-coding markers when the data lacks a formal plantTypeId.
+// Falls back to the upazila color system for submissions that do
+// have an upazila, but seed/sheet entries only have speciesName.
+
+const SPECIES_CATEGORY_COLORS: Record<string, string> = {
+  // ফলদ (Fruit) — greens
+  'আম': '#16a34a',
+  'পেয়ারা': '#15803d',
+  'লেবু': '#22c55e',
+  'মাল্টা': '#4ade80',
+  'লিচু': '#86efac',
+  'কাঁঠাল': '#166534',
+  'নারিকেল': '#059669',
+  'কমলা': '#65a30d',
+  'ফলদ': '#16a34a',
+  // বনজ (Forest/Timber) — browns/earth tones
+  'মেহগনি': '#92400e',
+  'সেগুন': '#78350f',
+  'শিশু': '#a16207',
+  'আকাশমণি': '#b45309',
+  'বনজ': '#92400e',
+  'রেইনট্রি': '#854d0e',
+  // ঔষধি (Medicinal) — purples
+  'নিম': '#7c3aed',
+  'ঘৃতকুমারী': '#8b5cf6',
+  'ঔষধি': '#7c3aed',
+  // শোভাবর্ধনকারী (Ornamental) — pinks
+  'কৃষ্ণচূড়া': '#ec4899',
+  'শোভা': '#ec4899',
+  // বাঁশ/বেত (Bamboo/Cane) — olives
+  'বাঁশ': '#65a30d',
+  'বেত': '#4d7c0f',
+};
+
+const DEFAULT_SPECIES_COLOR = '#047857'; // emerald-700, preserves existing palette for unknowns
+
+/** Infer a color from speciesName by checking for known keywords */
+function colorForSpecies(speciesName: string): string {
+  if (!speciesName) return DEFAULT_SPECIES_COLOR;
+  // Check each category keyword against the species name
+  for (const [keyword, color] of Object.entries(SPECIES_CATEGORY_COLORS)) {
+    if (speciesName.includes(keyword)) return color;
+  }
+  return DEFAULT_SPECIES_COLOR;
+}
+
+/** Determine marker color: prefer upazila color for real submissions,
+ *  fall back to species-based category color for seed/sheet entries */
+function markerColor(upazila: string | undefined, speciesName: string): string {
+  const canonical = upazila ? canonicalizeUpazila(upazila) : upazila;
+  if (canonical && UPAZILA_COLORS[canonical]) return UPAZILA_COLORS[canonical];
+  return colorForSpecies(speciesName);
+}
+
+// ---------- Fix #2: Leaflet default marker icon paths break with Vite bundling ----------
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// ---------- Layer labels (Bengali) ----------
+
+const LAYER_LABELS: Record<LayerId, string> = {
+  ndvi: '\uD83C\uDF3F NDVI',
+  evi: '\uD83C\uDF43 EVI',
+  satellite: '\uD83D\uDEF0\uFE0F \u09B8\u09CD\u09AF\u09BE\u099F\u09C7\u09B2\u09BE\u0987\u099F',
+  osm: '\uD83D\uDDFA\uFE0F \u09AE\u09BE\u09A8\u099A\u09BF\u09A4\u09CD\u09B0',
+};
+
+// ---------- Pipeline result ----------
+
+interface PipelineResult {
+  ndvi_mean: number;
+  evi_mean?: number;
+  healthy_pct: number;
+  stress_pct: number;
+  bare_pct: number;
+  area_ha: number;
+  source?: string;
+  ai_analysis?: string;
+}
+
+// NOTE: PipelineState is now imported from ./NDVISimulatorPanel to keep the
+// Map page pipeline button and the new NDVI Simulator panel in sync.
+
+// ---------- Sub-components ----------
+
+function LayerSwitcher({ active, onChange }: { active: LayerId; onChange: (l: LayerId) => void }) {
+  return (
+    <div className="absolute top-16 left-2 sm:top-3 sm:left-3 z-[1000] flex gap-1 sm:gap-1.5 bg-white/95 backdrop-blur rounded-full p-1 shadow-lg">
+      {(Object.keys(LAYER_LABELS) as LayerId[]).map((id) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-xs font-medium transition-colors whitespace-nowrap ${
+            active === id ? 'bg-emerald-700 text-white border border-emerald-800' : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          {LAYER_LABELS[id]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CloudPipelineButton({ state, onRun }: { state: PipelineState; onRun: () => void }) {
+  const config: Record<PipelineState, { icon: JSX.Element; ring: string; bg: string }> = {
+    idle: { icon: <Cloud size={18} />, ring: '', bg: 'bg-slate-600' },
+    running: { icon: <RefreshCw size={18} className="animate-spin" />, ring: 'ring-4 ring-amber-300/60 animate-pulse', bg: 'bg-amber-500' },
+    success: { icon: <CheckCircle2 size={18} />, ring: '', bg: 'bg-emerald-600' },
+    error: { icon: <AlertTriangle size={18} />, ring: '', bg: 'bg-red-500' },
+  };
+  const c = config[state];
+  return (
+    <button
+      onClick={onRun}
+      disabled={state === 'running'}
+      className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full text-white flex items-center justify-center shadow-lg transition-all ${c.bg} ${c.ring}`}
+      title="\u09B8\u09CD\u09AF\u09BE\u099F\u09C7\u09B2\u09BE\u0987\u099F \u09AC\u09BF\u09B6\u09CD\u09B2\u09C7\u09B7\u09A3 \u099A\u09BE\u09B2\u09BE\u09A8"
+    >
+      {c.icon}
+    </button>
+  );
+}
+
+function ResultOverlay({ result, onClose }: { result: PipelineResult; onClose: () => void }) {
+  const isDemo = !result.source || result.source === 'demo_estimate';
+  const colorFor = (v: number, goodHigh = true) => {
+    const good = goodHigh ? v >= 60 : v <= 15;
+    const warn = goodHigh ? v >= 35 : v <= 30;
+    return good ? 'text-emerald-600' : warn ? 'text-amber-600' : 'text-red-600';
+  };
+  return (
+    <div className="absolute top-2 right-2 sm:top-3 sm:right-3 z-[1000] w-48 sm:w-56 bg-white/95 backdrop-blur rounded-xl shadow-xl p-2.5 sm:p-3 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[10px] sm:text-xs font-bold text-gray-700">বিশ্লেষণ ফলাফল</h4>
+        <button onClick={onClose} className="text-gray-400 text-xs cursor-pointer">✕</button>
+      </div>
+      {isDemo && (
+        <p className="text-[9px] sm:text-[10px] bg-amber-50 text-amber-700 rounded px-1.5 py-1">
+          ⚠️ ডেমো ডেটা — প্রকৃত স্যাটেলাইট বিশ্লেষণ নয়
+        </p>
+      )}
+      <div className="text-[10px] sm:text-xs space-y-1">
+        <div className="flex justify-between"><span className="text-gray-500">গড় NDVI</span><span className="font-semibold">{result.ndvi_mean.toFixed(2)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">সুস্থ%</span><span className={`font-semibold ${colorFor(result.healthy_pct, true)}`}>{result.healthy_pct}%</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">চাপগ্রস্ত%</span><span className={`font-semibold ${colorFor(result.stress_pct, false)}`}>{result.stress_pct}%</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">নগ্ন%</span><span className="font-semibold text-gray-700">{result.bare_pct}%</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">মোট হেক্টর</span><span className="font-semibold">{result.area_ha} ha</span></div>
+      </div>
+      {result.ai_analysis && <p className="text-[9px] sm:text-[10px] text-gray-500 border-t pt-1.5 leading-relaxed">{result.ai_analysis}</p>}
+    </div>
+  );
+}
+
+function NDVILegend({ visible }: { visible: boolean }) {
+  const [open, setOpen] = useState(true);
+  if (!visible) return null;
+  return (
+    <div className="absolute bottom-14 left-2 sm:left-3 z-[1000]">
+      {open ? (
+        <div className="bg-white/95 backdrop-blur rounded-lg shadow-lg p-2 sm:p-2.5 w-36 sm:w-40">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[9px] sm:text-[10px] font-bold text-gray-600">NDVI মান</span>
+            <button onClick={() => setOpen(false)} className="text-gray-400 text-[10px] cursor-pointer">✕</button>
+          </div>
+          {NDVI_BANDS.map((b) => (
+            <div key={b.label} className="flex items-center gap-1.5 text-[9px] sm:text-[10px] py-0.5">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: b.color }} />
+              <span className="text-gray-600 flex-1">{b.label}</span>
+              <span className="text-gray-400">{b.range}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <button onClick={() => setOpen(true)} className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 rounded-full shadow-lg flex items-center justify-center cursor-pointer">
+          <BarChart3 size={14} className="text-gray-600 sm:w-4 sm:h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BoundsTracker({ onBoundsChange }: { onBoundsChange: (b: LatLngBounds) => void }) {
+  const map = useMapEvents({
+    moveend: () => onBoundsChange(map.getBounds()),
+  });
+  return null;
+}
+
+function CustomZoomControl({ mapRef }: { mapRef: React.RefObject<LeafletMap | null> }) {
+  return (
+    <div className="absolute top-16 right-2 sm:top-3 sm:right-3 z-[1000] flex flex-col gap-1">
+      <button
+        onClick={() => mapRef.current?.zoomIn()}
+        className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
+        title="জুম ইন"
+      >
+        <Plus size={16} />
+      </button>
+      <button
+        onClick={() => mapRef.current?.zoomOut()}
+        className="w-8 h-8 sm:w-9 sm:h-9 bg-white/95 backdrop-blur rounded-lg shadow-lg flex items-center justify-center text-gray-700 hover:bg-gray-100 transition active:scale-95 cursor-pointer"
+        title="জুম আউট"
+      >
+        <Minus size={16} />
+      </button>
+    </div>
+  );
+}
+
+function BoundsOverlay({ bounds }: { bounds: LatLngBounds | null }) {
+  if (!bounds) return null;
+  return (
+    <div className="absolute inset-0 pointer-events-none z-[999] flex items-center justify-center">
+      <div className="text-[10px] text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full font-medium">
+        <Crosshair size={10} className="inline -mt-0.5 mr-1" />
+        বিশ্লেষণ এলাকা
+      </div>
+    </div>
+  );
+}
+
+function TileStatusIndicator({ loading, error }: { loading: boolean; error: boolean }) {
+  if (!loading && !error) return null;
+  return (
+    <div className="absolute bottom-14 right-2 sm:right-3 z-[1000]">
+      {loading && (
+        <div className="flex items-center gap-1.5 bg-white/95 backdrop-blur rounded-full shadow-lg px-3 py-1.5 text-[10px] text-gray-600">
+          <Loader2 size={12} className="animate-spin" />
+          টাইল লোড হচ্ছে...
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-1.5 bg-red-50/95 backdrop-blur rounded-full shadow-lg px-3 py-1.5 text-[10px] text-red-700">
+          <AlertTriangle size={12} />
+          টাইল লোড ব্যর্থ
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useTileStatus(mapRef: React.RefObject<LeafletMap | null>) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const clearTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const onLoading = () => {
+      if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
+      setError(false);
+      setLoading(true);
+    };
+    const onLoad = () => {
+      setLoading(false);
+      setError(false);
+    };
+    const onTileError = () => {
+      setLoading(false);
+      setError(true);
+      clearTimeoutRef.current = setTimeout(() => setError(false), 5000);
+    };
+
+    map.on('tileloadstart', onLoading);
+    map.on('tileload', onLoad);
+    map.on('load', onLoad);
+    map.on('tileerror', onTileError);
+
+    return () => {
+      map.off('tileloadstart', onLoading);
+      map.off('tileload', onLoad);
+      map.off('load', onLoad);
+      map.off('tileerror', onTileError);
+      if (clearTimeoutRef.current) clearTimeout(clearTimeoutRef.current);
+    };
+  }, [mapRef]);
+
+  return { loading, error };
+}
+
+// ---------- Main component ----------
+
+interface MapTabProps {
+  geoState: GeoState | null;
+  onMapReady?: (invalidate: () => void) => void;
+}
+
+const DEFAULT_CENTER: [number, number] = [25.805, 89.636];
+
+export default function MapTab({ geoState, onMapReady }: MapTabProps) {
+  const [activeLayer, setActiveLayer] = useState<LayerId>('ndvi');
+  const [pipelineState, setPipelineState] = useState<PipelineState>('idle');
+  const [result, setResult] = useState<PipelineResult | null>(null);
+  const [bounds, setBounds] = useState<LatLngBounds | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [mapKey, setMapKey] = useState(0);
+  // NDVI Simulator & Canopy Growth Tracker panel visibility
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
+
+  // ---- Live Google Sheet data (App_Entry via Apps Script), replaces the
+  // frozen SEED_PLANTATIONS snapshot once it loads successfully ----
+  const { entries: sheetEntries, live: sheetLive } = useSheetPlantations();
+
+  // ---- Real plantation submissions layer (color-coded, click-to-edit) ----
+  const [submissions, setSubmissions] = useState<PlantationSubmission[]>([]);
+  const [editingSubmission, setEditingSubmission] = useState<PlantationSubmission | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeUpazilas, setActiveUpazilas] = useState<string[]>([]);
+
+  const reloadSubmissions = useCallback(() => {
+    getSubmissions().then(setSubmissions).catch(() => setSubmissions([]));
+  }, []);
+
+  useEffect(() => {
+    reloadSubmissions();
+  }, [reloadSubmissions]);
+
+  const toggleUpazila = useCallback((u: string) => {
+    setActiveUpazilas((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]));
+  }, []);
+
+  const filteredSubmissions = submissions
+    .filter((s) => s.latitude && s.longitude)
+    .filter((s) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(s.upazila)))
+    .filter((s) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      return (
+        s.village?.toLowerCase().includes(q) ||
+        s.caretakerName?.toLowerCase().includes(q) ||
+        s.upazila?.toLowerCase().includes(q) ||
+        s.seedlings.some((sd) => sd.speciesName?.toLowerCase().includes(q))
+      );
+    });
+
+  const handleSaveEdit = useCallback(
+    async (updated: PlantationSubmission) => {
+      await saveSubmission(updated);
+      setEditingSubmission(null);
+      reloadSubmissions();
+    },
+    [reloadSubmissions]
+  );
+
+  const center: [number, number] = geoState?.coords
+    ? [geoState.coords.latitude, geoState.coords.longitude]
+    : DEFAULT_CENTER;
+
+  const tiles = getLayerTiles(activeLayer);
+  const satelliteTiles = getLayerTiles('satellite');
+
+  const { loading: tileLoading, error: tileError } = useTileStatus(mapRef);
+
+  const runPipeline = useCallback(async () => {
+    setPipelineState('running');
+    const timeout = setTimeout(() => setPipelineState((s) => (s === 'running' ? 'error' : s)), 8000);
+    try {
+      const boundsPayload = bounds
+        ? [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]]
+        : null;
+      const endpoint = import.meta.env.VITE_GEE_PIPELINE_URL || '/api/gee-ndvi';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bounds: boundsPayload,
+          date_from: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
+          date_to: new Date().toISOString().split('T')[0],
+          indices: ['NDVI', 'EVI', 'LSWI'],
+        }),
+      });
+      if (!res.ok) throw new Error('Pipeline request failed');
+      const data = (await res.json()) as PipelineResult;
+      setResult(data);
+      setPipelineState('success');
+    } catch {
+      setPipelineState('error');
+    } finally {
+      clearTimeout(timeout);
+      setTimeout(() => setPipelineState('idle'), 8000);
+    }
+  }, [bounds]);
+
+  const showSatelliteUnderlay = activeLayer === 'ndvi' || activeLayer === 'evi';
+  const showLegend = activeLayer === 'ndvi' || activeLayer === 'evi';
+
+  const handleMapReady = useCallback((map: LeafletMap) => {
+    mapRef.current = map;
+  }, []);
+
+  // Register invalidateSize callback with parent App
+  useEffect(() => {
+    if (onMapReady) {
+      const invalidate = () => {
+        if (mapRef.current) {
+          mapRef.current.invalidateSize();
+        }
+      };
+      onMapReady(invalidate);
+    }
+  }, [onMapReady, mapRef.current]);
+
+  // Also auto-invalidate when the container becomes visible (backup)
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (mapRef.current && el.offsetParent !== null) {
+        mapRef.current.invalidateSize();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full" style={{ minHeight: 0 }}>
+      <MapContainer
+        key={mapKey}
+        center={center}
+        zoom={12}
+        className="w-full h-full"
+        zoomControl={false}
+        ref={handleMapReady}
+        style={{ background: '#e5e7eb' }}
+      >
+        {showSatelliteUnderlay && (
+          <TileLayer
+            key="satellite-underlay"
+            url={satelliteTiles.url}
+            attribution={satelliteTiles.attribution}
+            opacity={0.4}
+          />
+        )}
+        <TileLayer
+          key={activeLayer}
+          url={tiles.url}
+          attribution={tiles.attribution}
+        />
+
+        {/* Plantation markers from the plantation submission system.
+            When the Apps Script live sheet sync (GAS_WEBHOOK_URL) is
+            configured and reachable, every App_Entry row is plotted here
+            (hundreds of live field submissions). If it's unavailable --
+            offline, not configured, or GAS is briefly down -- this falls
+            back to the frozen 36-row SEED_PLANTATIONS snapshot so the map
+            is never empty. Each circle marker is colored emerald (matches
+            project palette) and shows a tooltip on hover; click for the
+            full popup. */}
+        {sheetLive
+          ? sheetEntries
+              .filter((p) => {
+                if (!searchQuery.trim()) return true;
+                const q = searchQuery.trim().toLowerCase();
+                const primarySp = p.seedlings[0]?.speciesName || '';
+                return (
+                  primarySp.toLowerCase().includes(q) ||
+                  p.district?.toLowerCase().includes(q) ||
+                  p.upazila?.toLowerCase().includes(q) ||
+                  p.village?.toLowerCase().includes(q) ||
+                  p.farmerName?.toLowerCase().includes(q)
+                );
+              })
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
+              .map((p, i) => {
+              const primarySpecies = p.seedlings[0]?.speciesName || '';
+              const speciesLabel =
+                p.seedlings.length > 1
+                  ? `${primarySpecies} +${p.seedlings.length - 1}`
+                  : primarySpecies || 'বৃক্ষরোপণ';
+              const mColor = markerColor(p.upazila, primarySpecies);
+              return (
+                <CircleMarker
+                  key={`sheet-${p.submissionId || i}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: mColor,
+                    fillColor: mColor,
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      const sub = createEmptySubmission('citizen');
+                      sub.latitude = p.latitude;
+                      sub.longitude = p.longitude;
+                      sub.accuracy = 10;
+                      sub.district = p.district || '';
+                      sub.upazila = p.upazila || '';
+                      sub.union = p.union || '';
+                      sub.village = p.village || '';
+                      sub.caretakerName = p.farmerName || '';
+                      sub.caretakerMobile = p.farmerMobile || '';
+                      sub.saaoName = p.saaoName || '';
+                      sub.monitoringOfficerName = p.officerName || '';
+                      sub.seedlings = p.seedlings.length > 0
+                        ? p.seedlings.map((sd) => ({ id: crypto.randomUUID(), speciesName: sd.speciesName || '', count: sd.quantity || 0 }))
+                        : [{ id: crypto.randomUUID(), speciesName: primarySpecies || '', count: p.totalQuantity || 0 }];
+                      sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                      sub.remarks = `[লাইভ শীট থেকে আমদানি]`;
+                      setEditingSubmission(sub);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{speciesLabel}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.totalQuantity)} টি · {p.district} / {p.upazila}
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {speciesLabel}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        {p.union && <div><b>ইউনিয়ন/গ্রাম:</b> {p.union} {p.village ? `/ ${p.village}` : ''}</div>}
+                        <div><b>সংখ্যা:</b> {toBnNum(p.totalQuantity)} টি</div>
+                        {p.plantingDate && <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>}
+                        {p.farmerName && (
+                          <div><b>কৃষক:</b> {p.farmerName}{p.farmerMobile ? ` (${p.farmerMobile})` : ''}</div>
+                        )}
+                        {p.saaoName && <div><b>SAAO:</b> {p.saaoName}</div>}
+                        {p.officerName && <div><b>মনিটরিং অফিসার:</b> {p.officerName}</div>}
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 mt-1">🔴 লাইভ শীট থেকে</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const sub = createEmptySubmission('citizen');
+                          sub.latitude = p.latitude;
+                          sub.longitude = p.longitude;
+                          sub.accuracy = 10;
+                          sub.district = p.district || '';
+                          sub.upazila = p.upazila || '';
+                          sub.union = p.union || '';
+                          sub.village = p.village || '';
+                          sub.caretakerName = p.farmerName || '';
+                          sub.caretakerMobile = p.farmerMobile || '';
+                          sub.saaoName = p.saaoName || '';
+                          sub.monitoringOfficerName = p.officerName || '';
+                          sub.seedlings = p.seedlings.length > 0
+                            ? p.seedlings.map((sd) => ({ id: crypto.randomUUID(), speciesName: sd.speciesName || '', count: sd.quantity || 0 }))
+                            : [{ id: crypto.randomUUID(), speciesName: primarySpecies || '', count: p.totalQuantity || 0 }];
+                          sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                          sub.remarks = `[লাইভ শীট থেকে আমদানি]`;
+                          setEditingSubmission(sub);
+                        }}
+                        className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                      >
+                        সম্পাদনা
+                      </button>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              );
+            })
+          : SEED_PLANTATIONS
+              .filter((p) => p.latitude !== 0 && p.longitude !== 0)
+              .filter((p) => {
+                if (!searchQuery.trim()) return true;
+                const q = searchQuery.trim().toLowerCase();
+                return (
+                  p.speciesName?.toLowerCase().includes(q) ||
+                  p.district?.toLowerCase().includes(q) ||
+                  p.upazila?.toLowerCase().includes(q) ||
+                  p.caretaker?.toLowerCase().includes(q)
+                );
+              })
+              .filter((p) => activeUpazilas.length === 0 || activeUpazilas.includes(canonicalizeUpazila(p.upazila)))
+              .map((p) => {
+                const mColor = markerColor(p.upazila, p.speciesName);
+                return (
+                <CircleMarker
+                  key={`seed-${p.sl}`}
+                  center={[p.latitude, p.longitude]}
+                  radius={6}
+                  pathOptions={{
+                    color: mColor,
+                    fillColor: mColor,
+                    fillOpacity: 0.75,
+                    weight: 2,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      const sub = createEmptySubmission('citizen');
+                      sub.latitude = p.latitude;
+                      sub.longitude = p.longitude;
+                      sub.accuracy = 10;
+                      sub.district = p.district || '';
+                      sub.upazila = p.upazila || '';
+                      sub.village = '';
+                      sub.caretakerName = p.caretaker || '';
+                      sub.caretakerMobile = '';
+                      sub.saaoName = p.saao || '';
+                      sub.monitoringOfficerName = p.monitoringOfficer || '';
+                      sub.seedlings = [{ id: crypto.randomUUID(), speciesName: p.speciesName, count: p.count }];
+                      sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                      sub.remarks = `[সিড স্ন্যাপশট থেকে আমদানি]`;
+                      setEditingSubmission(sub);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                    <div className="text-[10px] leading-tight">
+                      <div className="font-bold">{p.speciesName}</div>
+                      <div className="text-slate-600">
+                        {toBnNum(p.count)} টি · {p.district} / {p.upazila}
+                      </div>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="text-xs min-w-[180px]">
+                      <div className="font-bold text-emerald-800 mb-1 flex items-center gap-1">
+                        <Trees size={12} /> {p.speciesName}
+                      </div>
+                      <div className="space-y-0.5 text-[11px] text-slate-700">
+                        <div><b>জেলা:</b> {p.district} · {p.upazila}</div>
+                        <div><b>সংখ্যা:</b> {toBnNum(p.count)} টি</div>
+                        <div><b>রোপণ তারিখ:</b> {p.plantingDate}</div>
+                        <div><b>পরিচর্যাকারী:</b> {p.caretaker}</div>
+                        <div className="font-mono text-[10px] text-slate-500 mt-1">
+                          {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                        </div>
+                        <div className="text-[10px] text-amber-600 mt-1">📦 অফলাইন সিড স্ন্যাপশট</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const sub = createEmptySubmission('citizen');
+                          sub.latitude = p.latitude;
+                          sub.longitude = p.longitude;
+                          sub.accuracy = 10;
+                          sub.district = p.district || '';
+                          sub.upazila = p.upazila || '';
+                          sub.village = '';
+                          sub.caretakerName = p.caretaker || '';
+                          sub.caretakerMobile = '';
+                          sub.saaoName = p.saao || '';
+                          sub.monitoringOfficerName = p.monitoringOfficer || '';
+                          sub.seedlings = [{ id: crypto.randomUUID(), speciesName: p.speciesName, count: p.count }];
+                          sub.plantationDate = p.plantingDate || new Date().toISOString().slice(0, 10);
+                          sub.remarks = `[সিড স্ন্যাপশট থেকে আমদানি]`;
+                          setEditingSubmission(sub);
+                        }}
+                        className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                      >
+                        সম্পাদনা
+                      </button>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+                );
+              })}
+
+        {/* Real plantation submissions, color-coded per upazila. Click a
+            marker to see the summary, then "সম্পাদনা" opens MapEditModal
+            for on-site corrections (location, seedling counts, caretaker
+            contact) — writes back through the same offline sync queue
+            used by the entry form. */}
+        {filteredSubmissions.map((s) => {
+          const color = colorForUpazila(canonicalizeUpazila(s.upazila));
+          const totalCount = s.seedlings.reduce((sum, sd) => sum + (sd.count || 0), 0);
+          return (
+            <CircleMarker
+              key={s.id}
+              center={[s.latitude, s.longitude]}
+              radius={7}
+              pathOptions={{
+                color,
+                fillColor: color,
+                fillOpacity: 0.8,
+                weight: 2,
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -6]} opacity={1}>
+                <div className="text-[10px] leading-tight">
+                  <div className="font-bold">{s.village}</div>
+                  <div className="text-slate-600">
+                    {toBnNum(totalCount)} টি চারা · {s.upazila}
+                  </div>
+                </div>
+              </Tooltip>
+              <Popup>
+                <div className="text-xs min-w-[180px] space-y-1">
+                  <div className="font-bold text-emerald-800 flex items-center gap-1">
+                    <Trees size={12} /> {s.village}
+                  </div>
+                  <div className="space-y-0.5 text-[11px] text-slate-700">
+                    <div><b>উপজেলা:</b> {s.upazila} · {s.union}</div>
+                    <div><b>মোট চারা:</b> {toBnNum(totalCount)} টি</div>
+                    <div><b>পরিচর্যাকারী:</b> {s.caretakerName || '—'}</div>
+                    <div className="font-mono text-[10px] text-slate-500">
+                      {s.latitude.toFixed(5)}, {s.longitude.toFixed(5)}
+                    </div>
+                    {!s.synced && <div className="text-amber-600 text-[10px]">⏳ সিঙ্ক বাকি</div>}
+                  </div>
+                  <button
+                    onClick={() => setEditingSubmission(s)}
+                    className="w-full mt-1 py-1.5 rounded-lg bg-emerald-700 text-white text-[11px] font-semibold hover:bg-emerald-800 cursor-pointer"
+                  >
+                    সম্পাদনা
+                  </button>
+                </div>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+
+        <BoundsTracker onBoundsChange={setBounds} />
+      </MapContainer>
+
+      <LayerSwitcher active={activeLayer} onChange={setActiveLayer} />
+      <MapFilterBar
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        activeUpazilas={activeUpazilas}
+        onToggleUpazila={toggleUpazila}
+        onClearUpazilas={() => setActiveUpazilas([])}
+        resultCount={filteredSubmissions.length}
+      />
+      <NDVILegend visible={showLegend} />
+      <CustomZoomControl mapRef={mapRef} />
+      <BoundsOverlay bounds={bounds} />
+      <TileStatusIndicator loading={tileLoading} error={tileError} />
+
+      {/* Existing compact cloud-pipeline FAB */}
+      <div className="absolute bottom-3 right-2 sm:bottom-4 sm:right-3 z-[1000]">
+        <CloudPipelineButton state={pipelineState} onRun={runPipeline} />
+      </div>
+
+      {/* In-map GPS capture FAB — captures current device location and
+          opens a new empty submission pre-filled with those coordinates,
+          writing through the same IndexedDB / useOfflineQueue path. */}
+      <div className="absolute bottom-14 left-2 sm:bottom-16 sm:left-3 z-[1000]">
+        <button
+          onClick={() => {
+            if (!navigator.geolocation) {
+              console.warn('Geolocation not supported');
+              return;
+            }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const sub = createEmptySubmission('citizen');
+                sub.latitude = +pos.coords.latitude.toFixed(6);
+                sub.longitude = +pos.coords.longitude.toFixed(6);
+                sub.accuracy = Math.round(pos.coords.accuracy);
+                sub.plantationDate = new Date().toISOString().slice(0, 10);
+                sub.remarks = '[GPS ক্যাপচার থেকে নতুন এন্ট্রি]';
+                setEditingSubmission(sub);
+                // Also fly the map to the captured location
+                if (mapRef.current) {
+                  mapRef.current.flyTo([pos.coords.latitude, pos.coords.longitude], 16, { duration: 1 });
+                }
+              },
+              () => console.warn('GPS capture failed'),
+              { enableHighAccuracy: true, timeout: 10000 }
+            );
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg bg-white/95 backdrop-blur text-emerald-800 hover:bg-emerald-50 border border-emerald-200 transition-all active:scale-95 cursor-pointer text-xs font-bold"
+          title="বর্তমান অবস্থান থেকে নতুন এন্ট্রি"
+        >
+          <Crosshair size={14} className="text-emerald-600" />
+          <span className="hidden sm:inline">GPS ক্যাপচার</span>
+          <span className="sm:hidden">GPS</span>
+        </button>
+      </div>
+
+      {/* NDVI Simulator & Canopy Growth Tracker — opens a side panel */}
+      <div className="absolute bottom-3 left-2 sm:bottom-4 sm:left-3 z-[1000]">
+        <button
+          onClick={() => setSimulatorOpen(true)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-full shadow-lg transition-all active:scale-95 cursor-pointer text-xs font-bold ${
+            simulatorOpen
+              ? 'bg-emerald-800 text-white'
+              : 'bg-white/95 backdrop-blur text-emerald-800 hover:bg-emerald-50 border border-emerald-200'
+          }`}
+          title="উপগ্রহ এনডিভিআই সিমুলেটর ও বৃদ্ধি ট্র্যাকিং"
+        >
+          <Satellite size={14} className={simulatorOpen ? 'text-emerald-300' : 'text-emerald-600'} />
+          <span className="hidden sm:inline">NDVI সিমুলেটর</span>
+          <span className="sm:hidden">NDVI</span>
+        </button>
+      </div>
+
+      {result && pipelineState !== 'running' && (
+        <ResultOverlay result={result} onClose={() => setResult(null)} />
+      )}
+
+      {/* The full NDVI + Canopy Growth Tracker panel.
+          Shares pipelineState + runPipeline so the simulator's "Run Cloud
+          Pipeline" button and the existing compact FAB stay in sync. */}
+      <NDVISimulatorPanel
+        open={simulatorOpen}
+        onClose={() => setSimulatorOpen(false)}
+        pipelineState={pipelineState}
+        onRunPipeline={runPipeline}
+        liveNdvi={result?.ndvi_mean ?? null}
+      />
+
+      {editingSubmission && (
+        <MapEditModal
+          submission={editingSubmission}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingSubmission(null)}
+        />
+      )}
+    </div>
+  );
+}
