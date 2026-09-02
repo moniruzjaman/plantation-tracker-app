@@ -40,6 +40,8 @@ export default async function handler(req: any, res: any) {
         }
       > = {};
 
+      let totalSeedlings = 0;
+
       for (const sub of submissions) {
         const district = sub.district || 'অজানা';
         if (!districtCarbon[district]) {

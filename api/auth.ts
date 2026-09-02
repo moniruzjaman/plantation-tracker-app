@@ -5,9 +5,9 @@
  *   GET    /api/auth/me?email=...
  */
 
-import { prisma } from '../_lib/prisma';
-import { getAllowList, findInAllowList } from '../_lib/auth';
-import { setCorsHeaders, parseBody } from '../_lib/helpers';
+import { prisma } from './_lib/prisma';
+import { getAllowList, findInAllowList } from './_lib/auth';
+import { setCorsHeaders, parseBody } from './_lib/helpers';
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res);
