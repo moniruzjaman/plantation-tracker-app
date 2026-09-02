@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Coins, Star } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 
 // Tabs the iframe still owns (not yet ported natively). 'dashboard' is now
 // native (OfflinePlantationDashboard), so it's no longer in this list.
@@ -667,6 +668,9 @@ export default function App() {
           </>
         )}
       </AnimatePresence>
+      
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }
