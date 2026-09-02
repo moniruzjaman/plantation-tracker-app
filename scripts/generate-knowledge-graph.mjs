@@ -1,0 +1,115 @@
+#!/usr/bin/env node
+/**
+ * Plantation Tracker — Knowledge Graph Generator
+ * 
+ * Generates an ontology and knowledge graph representing the entire system:
+ * - Domain entities (Administrative levels, SAAO, Caretakers, Submissions, Seedlings, Monitoring)
+ * - Scientific Taxonomy (Plant Types, Species, Carbon Factors, Spacing Norms)
+ * - MRV / Carbon & ESG Standards (VM0047, Gold Standard, SDGs, IPCC Tier 2)
+ * - Codebase Architecture (Frontend Modules, IndexedDB, APIs, Neon DB, GEE, Gemini AI)
+ * 
+ * Usage: node scripts/generate-knowledge-graph.mjs
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..');
+const OUTPUT_FILE = path.join(REPO_ROOT, 'knowledge-graph.json');
+
+const knowledgeGraph = {
+  "@context": {
+    "@vocab": "https://schema.org/",
+    "pt": "https://plantation-tracker.gov.bd/ontology#",
+    "vm0047": "https://verra.org/methodologies/VM0047#",
+    "ipcc": "https://ipcc.ch/tier2-factors#",
+    "sdg": "https://sdgs.un.org/goals#"
+  },
+  "metadata": {
+    "title": "Plantation Tracker Knowledge Graph",
+    "description": "Comprehensive Knowledge Graph of the 5-Year 250M Trees Plantation Tracking System",
+    "version": "2.0.0",
+    "program": "০৫ বছরে ২৫ কোটি বৃক্ষ রোপণ কর্মসূচি (5-Year 25 Crore Plantation Initiative)",
+    "jurisdiction": "Kurigram District, DAE Bangladesh",
+    "generatedAt": new Date().toISOString()
+  },
+  "graphs": {
+    "entities": [
+      // ─── 1. Administrative Hierarchy ───
+      { "id": "pt:Country_BD", "type": "pt:Country", "name": "বাংলাদেশ (Bangladesh)" },
+      { "id": "pt:Division_Rangpur", "type": "pt:Division", "name": "রংপুর (Rangpur)", "partOf": "pt:Country_BD" },
+      { "id": "pt:District_Kurigram", "type": "pt:District", "name": "কুড়িগ্রাম (Kurigram)", "partOf": "pt:Division_Rangpur" },
+      { "id": "pt:Upazila_KurigramSadar", "type": "pt:Upazila", "name": "কুড়িগ্রাম সদর", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Nageshwari", "type": "pt:Upazila", "name": "নাগেশ্বরী", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Bhurungamari", "type": "pt:Upazila", "name": "ভুরুঙ্গামারী", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Fulbari", "type": "pt:Upazila", "name": "ফুলবাড়ী", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Rajarhat", "type": "pt:Upazila", "name": "রাজারহাট", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Ulipur", "type": "pt:Upazila", "name": "উলিপুর", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Chilmari", "type": "pt:Upazila", "name": "চিলমারী", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Roumari", "type": "pt:Upazila", "name": "রৌমারী", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:Upazila_Rajibpur", "type": "pt:Upazila", "name": "চর রাজিবপুর", "partOf": "pt:District_Kurigram" },
+      { "id": "pt:AgriculturalBlock", "type": "pt:AdministrativeUnit", "description": "Sub-union agricultural operational block assigned to a SAAO" },
+
+      // ─── 2. Actors & User Roles ───
+      { "id": "pt:Role_Admin", "type": "pt:Role", "name": "District/Ministry Admin", "privileges": ["approve_submissions", "manage_taxonomy", "export_carbon_reports"] },
+      { "id": "pt:Role_MonitoringOfficer", "type": "pt:Role", "name": "Monitoring Officer (BCS Cadre / UAO / AEO)", "privileges": ["verify_trees", "measure_dbh_height", "sign_proforma"] },
+      { "id": "pt:Role_SAAO", "type": "pt:Role", "name": "Sub-Assistant Agriculture Officer (SAAO)", "privileges": ["register_plantation", "record_gps", "upload_photos"] },
+      { "id": "pt:Role_Caretaker", "type": "pt:Role", "name": "Community Caretaker / Farmer", "responsibilities": ["daily_maintenance", "irrigation", "protection"] },
+
+      // ─── 3. Core Domain Entities ───
+      { "id": "pt:Submission", "type": "pt:DataRecord", "description": "17-column official proforma record for a verified planting event" },
+      { "id": "pt:Seedling", "type": "pt:BiologicalEntity", "description": "Count and species of planted sapling associated with a submission" },
+      { "id": "pt:PhotoEvidence", "type": "pt:VerificationEvidence", "description": "Cryptographically hashed (SHA-256) geotagged evidence photo" },
+      { "id": "pt:MonitoringRevisit", "type": "pt:AuditRecord", "description": "VM0047 5-year longitudinal checkpoint record (DBH, height, canopy, health status)" },
+      { "id": "pt:QRTag", "type": "pt:PhysicalIdentifier", "description": "Cryptographically signed physical NFC/QR tree tag (e.g. BD-TREE-XXXXXX)" },
+
+      // ─── 4. Taxonomy & Carbon Model ───
+      { "id": "pt:Type_Forest", "type": "pt:PlantType", "name": "বনজ (Forest)" },
+      { "id": "pt:Type_Fruit", "type": "pt:PlantType", "name": "ফলদ (Fruit)" },
+      { "id": "pt:Type_Medicinal", "type": "pt:PlantType", "name": "ঔষধি (Medicinal)" },
+      { "id": "pt:Type_Ornamental", "type": "pt:PlantType", "name": "শোভাবর্ধনকারী (Ornamental)" },
+      { "id": "pt:Type_BambooCane", "type": "pt:PlantType", "name": "বাঁশ/বেত (Bamboo/Cane)" },
+
+      { "id": "pt:Species_Mehogoni", "type": "pt:Species", "name": "মেহগনি", "scientific": "Swietenia macrophylla", "carbonFactor": 0.50, "plantType": "pt:Type_Forest" },
+      { "id": "pt:Species_Akashmoni", "type": "pt:Species", "name": "আকাশমণি", "scientific": "Acacia auriculiformis", "carbonFactor": 0.45, "plantType": "pt:Type_Forest" },
+      { "id": "pt:Species_Segun", "type": "pt:Species", "name": "সেগুন", "scientific": "Tectona grandis", "carbonFactor": 0.48, "plantType": "pt:Type_Forest" },
+      { "id": "pt:Species_Mango", "type": "pt:Species", "name": "আম", "scientific": "Mangifera indica", "carbonFactor": 0.42, "plantType": "pt:Type_Fruit" },
+      { "id": "pt:Species_Jackfruit", "type": "pt:Species", "name": "কাঁঠাল", "scientific": "Artocarpus heterophyllus", "carbonFactor": 0.44, "plantType": "pt:Type_Fruit" },
+      { "id": "pt:Species_Neem", "type": "pt:Species", "name": "নিম", "scientific": "Azadirachta indica", "carbonFactor": 0.51, "plantType": "pt:Type_Medicinal" },
+
+      // ─── 5. MRV, Standards & External Services ───
+      { "id": "vm0047:Methodology", "type": "pt:Standard", "name": "Verra VM0047 Afforestation, Reforestation, Revegetation (ARR)" },
+      { "id": "ipcc:Tier2Allometry", "type": "pt:Algorithm", "name": "IPCC Tier 2 Biomass Allometric Equations" },
+      { "id": "sdg:SDG1_NoPoverty", "type": "pt:Goal", "name": "SDG 1: No Poverty (Agroforestry Income)" },
+      { "id": "sdg:SDG13_ClimateAction", "type": "pt:Goal", "name": "SDG 13: Climate Action (Carbon Sequestration)" },
+      { "id": "sdg:SDG15_LifeOnLand", "type": "pt:Goal", "name": "SDG 15: Life On Land (Biodiversity & Canopy Cover)" },
+      { "id": "pt:GoogleEarthEngine", "type": "pt:ExternalService", "name": "Google Earth Engine Sentinel-2 NDVI Pipeline" },
+      { "id": "pt:GeminiAI", "type": "pt:ExternalService", "name": "Google Gemini 2.5 Flash / Reasoning Assistant" },
+      { "id": "pt:NeonPostgres", "type": "pt:Database", "name": "Neon Serverless PostgreSQL DB (Prisma ORM)" },
+      { "id": "pt:DexieIndexedDB", "type": "pt:ClientDatabase", "name": "Dexie.js Client-side Offline IndexedDB" }
+    ],
+    "relations": [
+      { "source": "pt:Role_SAAO", "relation": "registers", "target": "pt:Submission" },
+      { "source": "pt:Role_MonitoringOfficer", "relation": "auditsAndSigns", "target": "pt:Submission" },
+      { "source": "pt:Role_MonitoringOfficer", "relation": "performs", "target": "pt:MonitoringRevisit" },
+      { "source": "pt:Role_Caretaker", "relation": "manages", "target": "pt:Submission" },
+      { "source": "pt:Submission", "relation": "contains", "target": "pt:Seedling" },
+      { "source": "pt:Submission", "relation": "hasEvidence", "target": "pt:PhotoEvidence" },
+      { "source": "pt:Submission", "relation": "trackedBy", "target": "pt:QRTag" },
+      { "source": "pt:Submission", "relation": "locatedIn", "target": "pt:Upazila_KurigramSadar" },
+      { "source": "pt:Submission", "relation": "subjectToRevisit", "target": "pt:MonitoringRevisit" },
+      { "source": "pt:Seedling", "relation": "isSpeciesOf", "target": "pt:Species_Mehogoni" },
+      { "source": "pt:MonitoringRevisit", "relation": "computesBiomassWith", "target": "ipcc:Tier2Allometry" },
+      { "source": "pt:MonitoringRevisit", "relation": "compliesWith", "target": "vm0047:Methodology" },
+      { "source": "pt:Submission", "relation": "contributesTo", "target": "sdg:SDG13_ClimateAction" },
+      { "source": "pt:Submission", "relation": "verifiedByRemoteSensing", "target": "pt:GoogleEarthEngine" },
+      { "source": "pt:Submission", "relation": "analyzedBy", "target": "pt:GeminiAI" },
+      { "source": "pt:DexieIndexedDB", "relation": "twoWaySyncsWith", "target": "pt:NeonPostgres" }
+    ]
+  }
+};
+
+fs.writeFileSync(OUTPUT_FILE, JSON.stringify(knowledgeGraph, null, 2), 'utf-8');
+console.log(`Knowledge Graph generated successfully at: ${OUTPUT_FILE}`);
