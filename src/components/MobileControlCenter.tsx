@@ -19,12 +19,15 @@ import {
   CheckCircle2,
   HardDrive,
   User,
-  Download
+  Download,
+  LayoutGrid,
+  ExternalLink
 } from 'lucide-react';
 
 import { GeoState } from './GeolocationIndicator';
 import { NetworkStatusData } from './NetworkStatus';
 import type { PlantationSubmission } from '../types/plantation';
+import { SUITE_APPS } from '../data/suiteApps';
 
 interface MobileControlCenterProps {
   networkState: NetworkStatusData | null;
@@ -37,7 +40,7 @@ interface MobileControlCenterProps {
 
 export default function MobileControlCenter({ networkState, geoState, submissions, userEmail, onOpenGuide }: MobileControlCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'db' | 'net' | 'gps' | 'mydata'>('db');
+  const [activeTab, setActiveTab] = useState<'db' | 'net' | 'gps' | 'mydata' | 'apps'>('db');
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [copied, setCopied] = useState(false);
   
@@ -199,6 +202,7 @@ export default function MobileControlCenter({ networkState, geoState, submission
     db: language === 'bn' ? 'অফলাইন রেকর্ড' : 'Offline DB',
     net: language === 'bn' ? 'নেট সংযোগ' : 'Network',
     gps: language === 'bn' ? 'জিপিএস সিগন্যাল' : 'GPS Location',
+    apps: language === 'bn' ? 'আরও অ্যাপস' : 'More Apps',
     guide: language === 'bn' ? 'ব্যবহার নির্দেশিকা' : 'Help Guide',
     offlineSub: language === 'bn' ? 'মোট অফলাইন রেকর্ড' : 'Total Offline Batches',
     totalPlanted: language === 'bn' ? 'মোট রোপণকৃত চারা' : 'Total Seedlings Planted',
@@ -328,7 +332,7 @@ export default function MobileControlCenter({ networkState, geoState, submission
                 </div>
 
                 {/* Grid Tabs Selection Row */}
-                <div className="grid grid-cols-4 gap-1 bg-gray-50 border border-gray-100 p-1 rounded-xl">
+                <div className="grid grid-cols-5 gap-1 bg-gray-50 border border-gray-100 p-1 rounded-xl">
                   {/* Tab 1: DB */}
                   <button
                     onClick={() => setActiveTab('db')}
@@ -380,6 +384,19 @@ export default function MobileControlCenter({ networkState, geoState, submission
                     <User className="w-3.5 h-3.5" />
                     {language === 'bn' ? 'আমার তথ্য' : 'MyData'}
                   </button>
+
+                  {/* Tab 5: More Apps */}
+                  <button
+                    onClick={() => setActiveTab('apps')}
+                    className={`py-1.5 rounded-lg text-[10.5px] font-semibold flex flex-col items-center justify-center gap-1 transition-all ${
+                      activeTab === 'apps'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'text-gray-600 active:bg-gray-100'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    {t.apps}
+                  </button>
                   </div>
 
                 {/* Tab Contents Frame */}
@@ -426,6 +443,31 @@ export default function MobileControlCenter({ networkState, geoState, submission
                           </button>
                         </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 5: MORE APPS */}
+                  {activeTab === 'apps' && (
+                    <div className="flex flex-col gap-2 animate-in" id="mobileControlCenterTabApps">
+                      {SUITE_APPS.map((app) => (
+                        <a
+                          key={app.id}
+                          href={app.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-2 bg-white border border-gray-100 rounded-xl p-3 shadow-sm active:bg-gray-50 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-gray-900 truncate">
+                              {language === 'bn' ? app.nameBn : app.nameEn}
+                            </p>
+                            <p className="text-[10px] text-gray-500 truncate">
+                              {language === 'bn' ? app.descriptionBn : app.descriptionEn}
+                            </p>
+                          </div>
+                          <ExternalLink className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                        </a>
+                      ))}
                     </div>
                   )}
 
