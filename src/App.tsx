@@ -22,6 +22,7 @@ import { useAuth } from './hooks/useAuth';
 import type { PlantationSubmission } from './types/plantation';
 import UserGuideModal from './components/UserGuideModal';
 import MobileControlCenter from './components/MobileControlCenter';
+import { SUITE_APPS } from './data/suiteApps';
 import { shareApp, shareViaWhatsApp, getDefaultSharePayload } from './utils/shareApp';
 import { 
   Sparkles, 
@@ -36,7 +37,9 @@ import {
   MessageCircle,
   Link as LinkIcon,
   Facebook,
-  Send as TelegramIcon
+  Send as TelegramIcon,
+  LayoutGrid,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Coins, Star } from 'lucide-react';
@@ -63,6 +66,7 @@ export default function App() {
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | undefined>(undefined);
   const [currentTab, setCurrentTab] = useState<TabId>('form');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [moreAppsOpen, setMoreAppsOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [sharePopoverOpen, setSharePopoverOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -335,6 +339,62 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* ======= MORE APPS MODAL ======= */}
+      <AnimatePresence>
+        {moreAppsOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm"
+              onClick={() => setMoreAppsOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+              className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-none"
+            >
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] overflow-y-auto pointer-events-auto">
+                <div className="px-5 py-4 sticky top-0 bg-gradient-to-br from-emerald-800 via-emerald-700 to-emerald-950 z-10">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4" /> আরও অ্যাপস
+                    </h3>
+                    <button
+                      onClick={() => setMoreAppsOpen(false)}
+                      className="text-white/85 cursor-pointer text-xl leading-none"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1 text-emerald-100">কৃষি এআই সিস্টেমের অন্যান্য অ্যাপ ও রিসোর্স</p>
+                </div>
+                <div className="p-4 flex flex-col gap-2">
+                  {SUITE_APPS.map((app) => (
+                    <a
+                      key={app.id}
+                      href={app.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-100 rounded-xl p-3 active:bg-gray-100 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-900 truncate">{app.nameBn}</p>
+                        <p className="text-[10px] text-gray-500 truncate">{app.descriptionBn}</p>
+                      </div>
+                      <ExternalLink className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* ======= TOP HEADER ======= */}
       <header className="flex-shrink-0 bg-gradient-to-r from-green-900 via-green-800 to-emerald-950 text-white shadow-md relative no-print overflow-visible" style={{ zIndex: 30 }}>
         <div
@@ -390,6 +450,13 @@ export default function App() {
                 </button>
               );
             })}
+            <button
+              onClick={() => setMoreAppsOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all duration-200 cursor-pointer text-emerald-100 hover:text-white hover:bg-emerald-700/40"
+            >
+              <LayoutGrid className="w-4 h-4 text-emerald-200" />
+              <span>আরও অ্যাপস</span>
+            </button>
           </nav>
 
           <img
@@ -609,6 +676,18 @@ export default function App() {
             </button>
           );
         })}
+        <button
+          onClick={() => setMoreAppsOpen(true)}
+          className="flex flex-col items-center justify-center flex-1 py-1 transition active:scale-95 cursor-pointer relative -outline-offset-2 focus-visible:outline-2 focus-visible:outline-emerald-500"
+          aria-label="আরও অ্যাপস"
+        >
+          <div className="p-1 rounded-xl transition-colors duration-200 text-slate-400">
+            <LayoutGrid className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] mt-0.5 font-semibold transition-colors duration-200 leading-tight text-slate-400">
+            আরও অ্যাপস
+          </span>
+        </button>
       </nav>
       
       {/* ======= AI Co-Pilot Floating FAB ======= */}

@@ -27,8 +27,6 @@ import {
   Table,
   FileText,
   Download,
-  LayoutGrid,
-  ExternalLink,
 } from 'lucide-react';
 import { calculateCarbonV2, getSpeciesCategory } from '../utils/carbonMath';
 import { calculateGrowthPrognosis, SPECIES_GROWTH_PARAMS } from '../utils/growthModel';
@@ -38,7 +36,6 @@ import type { PlantationSubmission } from '../types/plantation';
 import { toBnNum } from '../utils/mapHelper';
 import RegistryTab from './RegistryTab';
 import { SEED_PLANTATIONS, SEED_STATS } from '../data/seedPlantations';
-import { SUITE_APPS } from '../data/suiteApps';
 import { useSheetPlantations } from '../hooks/useSheetPlantations';
 import {
   fetchSeedSyncStatus,
@@ -447,33 +444,6 @@ export default function OfflinePlantationDashboard({ syncState }: OfflinePlantat
               </span>
             </div>
           )}
-
-          {/* Quick links to the wider KrishiAI/DAE tool suite. Purely a
-              horizontal-scroll row of external <a> links -- reads no state
-              from and writes no state to the tab logic below, so it cannot
-              affect the metrics/health/wealth/registry tab switcher. */}
-          <div className="flex flex-col gap-1.5" id="dashboardMoreApps">
-            <span className="text-[10px] font-bold text-gray-400 flex items-center gap-1 px-0.5">
-              <LayoutGrid className="w-3 h-3" />
-              {language === 'bn' ? 'আরও অ্যাপস' : 'More Apps'}
-            </span>
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5" style={{ scrollbarWidth: 'none' }}>
-              {SUITE_APPS.map((app) => (
-                <a
-                  key={app.id}
-                  href={app.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-shrink-0 flex items-center gap-1.5 bg-gray-50 border border-gray-100 rounded-full pl-2.5 pr-2 py-1.5 active:bg-gray-100 transition-colors"
-                >
-                  <span className="text-[10.5px] font-semibold text-gray-700 whitespace-nowrap">
-                    {language === 'bn' ? app.nameBn : app.nameEn}
-                  </span>
-                  <ExternalLink className="w-2.5 h-2.5 text-emerald-600 flex-shrink-0" />
-                </a>
-              ))}
-            </div>
-          </div>
 
           {/* Tab Switcher — 4 tabs now */}
           <div className="flex border-b border-gray-100 p-0.5 bg-gray-50 rounded-xl">
